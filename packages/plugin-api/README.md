@@ -73,11 +73,11 @@ authors keep the language of their own titles and results.
 
 ## Implementation steps
 
-Status: steps 1–4 have landed (the scan, the settings list and configuration forms, `CommandRef` wheel
-bindings, the `url`/`open`/`keys` declarative executors, and selection reading via simulated Ctrl+C with
-clipboard restore, gated by the simulate-copy setting; UI-Automation-first selection arrives later, and
-`js`/`exec` report "not available yet" until steps 5–6). Each step leaves the app working and
-independently testable.
+Status: steps 1–5 have landed (the scan, the settings list and configuration forms, `CommandRef` wheel
+bindings, the `url`/`open`/`keys` declarative executors, selection reading via simulated Ctrl+C with clipboard
+restore, and the shared plugin host for `js` commands with streaming results, idle reclaim, timeout restart and
+the demotion rule; UI-Automation-first selection, paste, clickable result buttons and the `exec` executor are
+still ahead). Each step leaves the app working and independently testable.
 
 1. Land this package in `packages/plugin-api`; the host imports its types and `validateManifest` directly.
 2. **Plugin folder scan**: validate with `validateManifest`, list commands in the settings (with permission

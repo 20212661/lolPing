@@ -7,7 +7,11 @@ export default defineConfig({
   main: {
     build: {
       rollupOptions: {
-        input: { index: resolve('src/main/index.ts'), pluginWorker: resolve('src/main/pluginWorker.ts') },
+        input: {
+          index: resolve('src/main/index.ts'),
+          pluginWorker: resolve('src/main/pluginWorker.ts'),
+          pluginHostWorker: resolve('src/main/pluginHostWorker.ts'),
+        },
         output: { format: 'cjs', entryFileNames: '[name].js' },
       },
     },

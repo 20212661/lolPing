@@ -32,9 +32,29 @@ export function placeBubble(
 
 /**
  * Shows an action's bubble at the cursor: the newest replaces any bubble still on screen (each action answers its own
- * release, and a 'running' bubble is only ever replaced by its own answer).
+ * release, and a 'running' bubble is only ever replaced by its own answer). A 'running' update on the running bubble
+ * in place — that is how a streaming result grows without restarting the animation.
  */
 export function showBubble(layer: HTMLElement, view: ActionBubbleView): void {
+  if (view.state === 'running') {
+    // These selectors only ever match the div/span showBubble itself builds, so the casts are sound.
+    const found = layer.querySelectorAll('.actionBubble.running')[0] as HTMLElement | undefined;
+    if (found) {
+      if (view.body !== undefined && view.body !== '') {
+        let body = found.querySelectorAll('.actionBubbleBody')[0] as HTMLElement | undefined;
+        if (!body) {
+          body = document.createElement('span');
+          body.className = 'actionBubbleBody';
+          found.append(body);
+        }
+        body.textContent = view.body;
+      }
+      const place = placeBubble(view.x, view.y, window.innerWidth, window.innerHeight, found.offsetWidth, found.offsetHeight);
+      found.style.left = `${place.left}px`;
+      found.style.top = `${place.top}px`;
+      return;
+    }
+  }
   for (const old of layer.querySelectorAll('.actionBubble')) old.remove();
   const card = document.createElement('div');
   card.className = `actionBubble ${view.state}`;
@@ -43,6 +63,7 @@ export function showBubble(layer: HTMLElement, view: ActionBubbleView): void {
   card.append(title);
   if (view.body !== undefined && view.body !== '') {
     const body = document.createElement('span');
+    body.className = 'actionBubbleBody';
     body.textContent = view.body;
     card.append(body);
   }

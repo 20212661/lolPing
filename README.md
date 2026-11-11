@@ -155,9 +155,11 @@ placeholders filled from its settings; a `keys` command presses its key combinat
 text (Windows), lolPing briefly simulates Ctrl+C through its input helper and restores the clipboard afterwards —
 lifting the wheel trigger key first, so the app underneath sees a plain Ctrl+C. Clipboard managers may still capture the
 text, and formats Electron cannot round-trip are not restored; Settings → Actions has a switch that turns the simulation
-off (commands then read the clipboard as it is). The `js` and `exec` kinds are listed and can be placed, but answer
-"not available yet" when released. A manifest that fails validation shows its reasons in Settings → Actions instead of
-loading. Removing the folder removes its slices.
+off (commands then read the clipboard as it is). A `js` command runs the plugin's code in a shared, lazily started plugin host
+process (reclaimed after five idle minutes, restarted when a call wedges, and a plugin that times out twice in a row is
+moved to a throwaway process): its `activate(ctx)` registers the handler, and results can stream into the bubble.
+The `exec` kind is listed and can be placed, but answers "not available yet" when released. A manifest that fails
+validation shows its reasons in Settings → Actions instead of loading. Removing the folder removes its slices.
 
 The manifest format, the plugin API and the planned host steps are specified in
 [`packages/plugin-api`](packages/plugin-api/README.md). This adds no new network host: declarative commands open

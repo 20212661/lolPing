@@ -503,3 +503,28 @@ on top of this path. Smoke-tested in the built app: the settings switch shows, a
 through the real helper (tap → ack → done bubble), and a text command completes the grab flow. Whether the
 synthesized keys reach an elevated or foreground app is a UIPI question the agent sandbox cannot answer;
 that needs a hand-run check from a normal (non-sandboxed) launch.
+
+### 16.4 The shared plugin host (step 5)
+
+`js` commands run in `pluginHostWorker.js`, an Electron utilityProcess. `SharedPluginHost` (main process)
+owns its lifecycle exactly as the contract decides: lazy start on the first js invoke, five idle minutes and the
+process is reclaimed, a wedged call times out per the manifest's `timeoutMs` and restarts the process, and a plugin
+whose calls time out twice in a row is demoted to the one-shot model (`isolated` manifests always were). The process
+handle is injected, so the whole state machine is tested against fakes with a hand-run clock.
+
+The worker (`pluginHostCore.ts` pure, `pluginHostWorker.ts` wired) builds each plugin's `PluginContext`: `register`
+accepts only handlers the manifest declares, subscriptions dispose in reverse, `config`/`secrets`/`storage` proxy to
+the main process (`secrets` reads the plugin's settings values for now; `storage` is one JSON file per plugin under
+`plugins/data`, written atomically). HostAction calls carry the plugin id, and the main process re-checks the
+permission, verifies the call belongs to a live invocation, then executes with the same abilities the declarative
+commands use. Every worker message is validated by `parseHostMessage` (whitelisted methods and error codes, bounded
+strings) before use. One Electron 44 subtlety, found live: the child sees `{data}` message events while the
+parent-side `utilityProcess.on('message')` receives the bare value — the v2 worker's parent side had this wrong
+too, and nothing had ever exercised it.
+
+Streaming results: the worker sends `result` set/append messages, the main process coalesces them to ~30 fps
+(`ResultCoalescer`) and updates the running bubble in place (`showBubble` reuses the running card instead of
+rebuilding it, so the stream grows without restarting the animation); the final `done` keeps the streamed text.
+Result action buttons arrive with the clickable-bubble step; until then they are logged and dropped. Verified in the
+built app with a streaming probe plugin: three chunks appear live, the done bubble keeps the text, and a
+`host.readClipboard()` call round-trips through the permission check.

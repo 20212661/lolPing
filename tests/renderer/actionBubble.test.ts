@@ -24,7 +24,10 @@ class FakeNode {
   remove(): void {
     const p = this.parent;
     if (p instanceof FakeLayer) p.nodes = p.nodes.filter((n) => n !== this);
-    else if (p) p.children = p.children.filter((n) => n !== this);
+    else if (p) p.children = p.children.filter((c) => c !== this);
+  }
+  querySelectorAll(selector: string): FakeNode[] {
+    return this.children.filter((n) => n.className.split(' ').includes(selector.slice(1)));
   }
 }
 

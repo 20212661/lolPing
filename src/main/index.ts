@@ -5,7 +5,8 @@ import { readFileSync } from 'node:fs';
 import { userInfo } from 'node:os';
 import { join } from 'node:path';
 import { isCommandRef } from '../../packages/plugin-api/src/manifest';
-import { actionById, isPluginActionId, type WheelItem } from '../shared/actionCatalog';
+import { PERMISSION_OF, type HostMethod, type ToPluginHost } from '../../packages/plugin-api/src/protocol';
+import { actionById, isPluginActionId, type ActionError, type WheelItem } from '../shared/actionCatalog';
 import { commandIcons } from '../shared/commandTiles';
 import { repairUnknownItems } from '../shared/wheelLayout';
 import { resolveLang, strings, type Strings } from '../shared/i18n';
@@ -28,6 +29,8 @@ import { grabSelection, type SelectionDeps } from './selectionGrab';
 import { encodeSteps, tapSteps, triggerVkOf } from '../shared/keySteps';
 import { openAppTargetKind } from './actionOpenApp';
 import { buildPluginList, findCommand, itemExists, listFolderInputs, scanPluginFolders } from './pluginScan';
+import { readPluginStore, writePluginStore } from './pluginStorage';
+import { SharedPluginHost, type HostProcess } from './sharedPluginHost';
 import { ActionRuns } from './actionRuns';
 import { PluginRunner } from './pluginRunner';
 import { resolveTarget, toShared } from './displayNumbers';
@@ -172,6 +175,124 @@ function start(): void {
   };
   configureActions();
   const actionRuns = new ActionRuns();
+  // The shared plugin host: js commands from scanned plugins run here (packages/plugin-api protocol).
+  const pluginDataDir = join(pluginRoot, 'data');
+  /** Runs one validated host action for a plugin, after its permission check. */
+  const executeHostAction = async (pluginId: string, method: string, args: unknown[]): Promise<unknown> => {
+    const manifest = scan.plugins.find((p) => p.manifest.id === pluginId)?.manifest;
+    const perm = PERMISSION_OF[method as HostMethod];
+    if (perm !== null && !(manifest?.permissions ?? []).includes(perm as never)) {
+      throw new Error(`plugin '${pluginId}' lacks the '${perm}' permission`);
+    }
+    switch (method) {
+      case 'getSelection':
+        return (await grabSelection(selectionDeps(), triggerVkOf(settings.trigger)).catch(() => null)) ?? '';
+      case 'readClipboard':
+        return clipboard.readText();
+      case 'writeClipboard':
+        if (typeof args[0] !== 'string') throw new Error('writeClipboard needs text');
+        return clipboard.writeText((args[0] as string).slice(0, 16_384));
+      case 'paste':
+        throw new Error('paste lands with the clickable-bubble step');
+      case 'pressKeys': {
+        if (!Array.isArray(args[0]) || args[0].length === 0 || args[0].length > 16) throw new Error('pressKeys needs keys');
+        for (const combo of args[0] as unknown[]) {
+          const steps = tapSteps(String(combo));
+          if (!steps || !(await bridge.tap(encodeSteps(steps)))) throw new Error('key synthesis failed');
+        }
+        return undefined;
+      }
+      case 'open': {
+        const target = typeof args[0] === 'string' ? args[0] : '';
+        const extra = Array.isArray(args[1]) ? (args[1] as unknown[]).filter((a): a is string => typeof a === 'string') : [];
+        if (!target || !/^https?:\/\//i.test(target) && extra.length === 0 && openAppTargetKind(target) === 'empty') throw new Error('open needs a target');
+        if (openAppTargetKind(target) === 'url' && extra.length === 0) return shell.openExternal(target);
+        if (!spawnCommand(target, extra)) throw new Error('could not start');
+        return undefined;
+      }
+      case 'exec':
+        return execBounded(String(args[0] ?? ''), Array.isArray(args[1]) ? (args[1] as unknown[]).map(String) : []);
+      case 'notify': {
+        const body = String(args[0] ?? '').slice(0, 200);
+        if (body) overlays.toast(manifest?.name ?? pluginId, body);
+        return undefined;
+      }
+      case 'secrets.get': {
+        const key = String(args[0] ?? '');
+        const value = settings.plugins.configs[pluginId]?.[key];
+        return typeof value === 'string' ? value : undefined;
+      }
+      case 'storage.set': {
+        const key = String(args[0] ?? '');
+        if (!key) throw new Error('storage.set needs a key');
+        const store = { ...readPluginStore(pluginDataDir, pluginId), [key]: args[1] };
+        writePluginStore(pluginDataDir, pluginId, store);
+        return undefined;
+      }
+      case 'storage.delete': {
+        const key = String(args[0] ?? '');
+        const store = readPluginStore(pluginDataDir, pluginId);
+        delete store[key];
+        writePluginStore(pluginDataDir, pluginId, store);
+        return undefined;
+      }
+      default:
+        throw new Error(`unknown host action: ${method}`);
+    }
+  };
+  /** exec, bounded: output capped, the process killed when the plugin's invocation dies with it. */
+  const execBounded = (file: string, args: string[]): Promise<{ code: number; stdout: string; stderr: string }> =>
+    new Promise((resolve) => {
+      if (!file) {
+        resolve({ code: -1, stdout: '', stderr: 'no file' });
+        return;
+      }
+      try {
+        const child = spawn(file, args, { windowsHide: true });
+        let stdout = '';
+        let stderr = '';
+        child.stdout?.on('data', (d: Buffer) => { if (stdout.length < 100_000) stdout += d.toString().slice(0, 100_000 - stdout.length); });
+        child.stderr?.on('data', (d: Buffer) => { if (stderr.length < 20_000) stderr += d.toString().slice(0, 20_000 - stderr.length); });
+        child.on('error', (err) => resolve({ code: -1, stdout, stderr: stderr + String(err) }));
+        child.on('close', (code) => resolve({ code: code ?? -1, stdout, stderr }));
+      } catch (err) {
+        resolve({ code: -1, stdout: '', stderr: String(err) });
+      }
+    });
+  const sharedHost = new SharedPluginHost({
+    launch: () => {
+      const p = utilityProcess.fork(join(__dirname, 'pluginHostWorker.js'), [], {
+        stdio: 'ignore', serviceName: 'lolPing plugin host',
+      });
+      p.on('exit', (code) => console.warn(`[pluginHost] worker exited with ${code}`));
+      // UtilityProcess wraps messages in {data}; the host's injected boundary takes the value itself.
+      return {
+        postMessage: (m: ToPluginHost) => p.postMessage(m),
+        on: (event: 'message' | 'exit', listener: (v: never) => void) => {
+          // The child sees {data} events; the parent-side 'message' listener gets the bare value.
+          if (event === 'message') p.on('message', (m: unknown) => (listener as (v: unknown) => void)(m));
+          else p.on('exit', (code) => (listener as (v: number) => void)(code));
+        },
+        kill: () => p.kill(),
+      };
+    },
+    resolve: (pluginId) => {
+      const found = scan.plugins.find((p) => p.manifest.id === pluginId);
+      if (!found || !found.manifest.main) return null;
+      return {
+        manifest: found.manifest,
+        entry: join(pluginRoot, found.dir, found.manifest.main),
+        pluginPath: join(pluginRoot, found.dir),
+        config: settings.plugins.configs[pluginId] ?? {},
+        storage: Object.entries(readPluginStore(pluginDataDir, pluginId)),
+      };
+    },
+    execute: executeHostAction,
+    log: (pluginId, level, message) => console[level === 'info' ? 'log' : level](`[plugin:${pluginId}] ${message}`),
+    now: Date.now,
+    schedule: (fn, ms) => setTimeout(fn, ms),
+    cancel: clearTimeout,
+  });
   /** The OS abilities selectionGrab needs, wired to this app's clipboard and helper bridge. */
   const selectionDeps = (): SelectionDeps => ({
     tap: (steps) => bridge.tap(steps),
@@ -230,11 +351,15 @@ function start(): void {
       // A text-requiring command gets the selection when synthesis is allowed (Ctrl+C with clipboard
       // restore); without it, or when that finds nothing, the clipboard stands in.
       let clip = '';
+      let clipSource: 'selection' | 'clipboard' = 'clipboard';
       if ((command.requires ?? []).includes('text')) {
         const vk = triggerVkOf(settings.trigger);
         if (PLATFORM === 'win' && settings.plugins.simulateCopy && bridge.status === 'running' && vk !== null) {
           const sel = await grabSelection(selectionDeps(), vk).catch(() => null);
-          if (sel !== null) clip = sel;
+          if (sel !== null) {
+            clip = sel;
+            clipSource = 'selection';
+          }
         }
         if (!clip) clip = await clipboard.readText().catch(() => '');
       }
@@ -247,6 +372,34 @@ function start(): void {
           if (!(await bridge.tap(encodeSteps(steps)))) return fail(t.actionErrors.spawn);
         }
         return done();
+      }
+      // js commands run in the shared plugin host (or a one-shot process for isolated/demoted plugins).
+      if (command.run.kind === 'js') {
+        let streamed = '';
+        const result = await sharedHost.invoke({
+          pluginId: plugin.manifest.id,
+          handler: command.run.handler ?? command.id,
+          command: command.id,
+          timeoutMs: command.timeoutMs ?? 15_000,
+          ...(clip.trim() ? { text: clip.slice(0, 16_384), textSource: clipSource } : {}),
+          trigger: { source: 'wheel', displayId: a.displayId, x: Math.round(a.x), y: Math.round(a.y) },
+          isolated: plugin.manifest.isolated === true,
+        }, {
+          onText: (text) => {
+            streamed = text;
+            overlays.actionBubble(a.displayId, { ...at, state: 'running', title, body: text });
+          },
+        });
+        const stillCurrent = actionRuns.finish(run);
+        if (quitting || !stillCurrent) return;
+        if (result.ok) {
+          const body = result.detail ?? (streamed || t.actionDone);
+          overlays.actionBubble(a.displayId, { ...at, state: 'done', title, body });
+        } else {
+          if (result.detail) console.warn(`[plugin:${plugin.manifest.id}] ${result.detail}`);
+          fail(t.actionErrors[result.error as ActionError] ?? t.actionErrors.unknown);
+        }
+        return;
       }
       const outcome = runDeclarative(command, clip, settings.plugins.configs[plugin.manifest.id] ?? {});
       const stillCurrent = actionRuns.finish(run);
@@ -753,6 +906,15 @@ function start(): void {
     syncRoomVotes();
     overlays.updateSettings(overlaySettings(s, commandIcons(pluginList)));
     settingsWindow()?.webContents.send(SETTINGS_CH.changed, s);
+    if (s.plugins.configs !== previous.plugins.configs) {
+      // Push edited plugin config to loaded plugins, so onDidChange listeners see it at once.
+      for (const p of s.plugins.configs ? Object.keys(s.plugins.configs) : []) {
+        const before = previous.plugins.configs[p] ?? {};
+        const after = s.plugins.configs[p] ?? {};
+        const changed = [...new Set([...Object.keys(before), ...Object.keys(after)])].filter((k) => before[k] !== after[k]);
+        if (changed.length) sharedHost.configChanged(p, after, changed);
+      }
+    }
     if (s.language !== previous.language) tray.setText(text());
     if (
       s.displayName !== previous.displayName || s.tagColor !== previous.tagColor
@@ -876,6 +1038,6 @@ function start(): void {
     tray.destroy();
     panels.destroy();
     overlays.destroy();
-    void Promise.allSettled([bridge.stop(), commands.unload(), store.flush(), lan.whenClosed(), relay.whenClosed()]).then(() => app.exit(0));
+    void Promise.allSettled([bridge.stop(), commands.unload(), sharedHost.stop(), store.flush(), lan.whenClosed(), relay.whenClosed()]).then(() => app.exit(0));
   });
 }

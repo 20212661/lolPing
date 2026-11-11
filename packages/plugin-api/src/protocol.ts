@@ -36,6 +36,8 @@ export type ToPluginHost =
     manifest: PluginManifest;
     config: Record<string, unknown>;
     apiVersion: string;
+    /** The plugin's stored KV, sent once at load; later changes go through 'storage.set'/'storage.delete'. */
+    storage?: Array<[string, unknown]>;
   }
   | { t: 'unload'; pluginId: string }
   | {
