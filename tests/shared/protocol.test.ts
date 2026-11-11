@@ -17,6 +17,7 @@ describe('parseHelperLine', () => {
     expect(parseHelperLine('{"type":"panel","show":false}')).toEqual({ type: 'panel', show: false });
     expect(parseHelperLine('{"type":"error","message":"boom"}')).toEqual({ type: 'error', message: 'boom' });
     expect(parseHelperLine('{"type":"error","code":"noAccess","message":"x"}')).toEqual({ type: 'error', code: 'noAccess', message: 'x' });
+    expect(parseHelperLine('{"type":"tapped"}')).toEqual({ type: 'tapped' });
     expect(parseHelperLine('{"type":"sim","swallow":true,"inject":"down:left"}')).toEqual({ type: 'sim', swallow: true, inject: 'down:left' });
   });
 
@@ -90,5 +91,9 @@ describe('commands', () => {
     const line = serializeCommand({ type: 'suspend', on: true });
     expect(line).toBe('{"type":"suspend","on":true}\n');
     expect(line.indexOf('\n')).toBe(line.length - 1);
+  });
+
+  it('serializes a tap sequence with its flat steps string', () => {
+    expect(serializeCommand({ type: 'tap', steps: '18:0,17:1,67:1' })).toBe('{"type":"tap","steps":"18:0,17:1,67:1"}\n');
   });
 });

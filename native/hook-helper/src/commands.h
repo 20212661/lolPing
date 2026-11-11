@@ -1,17 +1,19 @@
 #pragma once
 #include <cstdint>
 #include <string>
+#include <vector>
 
 #include "decision.h"
 
 namespace lp {
 
 struct Command {
-  enum class Kind { Invalid, Config, SetEnabled, Suspend, Shutdown, SimEvent, SimTick } kind = Kind::Invalid;
+  enum class Kind { Invalid, Config, SetEnabled, Suspend, Shutdown, SimEvent, SimTick, Tap } kind = Kind::Invalid;
   Config config;      // Config
   bool flag = false;  // SetEnabled / Suspend
   InputEvent event;   // SimEvent
   uint64_t timeMs = 0;  // SimEvent / SimTick
+  std::vector<Inject> taps;  // Tap: a synthesized key sequence, queued like gesture replay
 };
 
 // Parses one stdin line. `current` supplies values for config fields missing from the message.

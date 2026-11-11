@@ -149,11 +149,15 @@ on Windows). Each subfolder with a `plugin.json` manifest is listed in Settings 
 permissions it asks for, its commands and its configuration fields. Drag a command from the Wheel pool onto a slice,
 the same way as any other item.
 
-Manifest commands with run kinds `url` and `open` run directly in the app, with no process at all: a `url` command
-fills the selected text (or, until selection reading ships, the clipboard text) into `{text:url}` and opens the address;
-an `open` command starts a program with `{config.<key>}` placeholders filled from its settings. The `keys`, `js` and
-`exec` kinds are listed and can be placed, but answer "not available yet" when released. A manifest that fails
-validation shows its reasons in Settings → Actions instead of loading. Removing the folder removes its slices.
+Manifest commands with run kinds `url`, `open` and `keys` run directly in the app, with no process at all: a `url` command
+fills the selected text into `{text:url}` and opens the address; an `open` command starts a program with `{config.<key>}`
+placeholders filled from its settings; a `keys` command presses its key combination. For commands that need the selected
+text (Windows), lolPing briefly simulates Ctrl+C through its input helper and restores the clipboard afterwards —
+lifting the wheel trigger key first, so the app underneath sees a plain Ctrl+C. Clipboard managers may still capture the
+text, and formats Electron cannot round-trip are not restored; Settings → Actions has a switch that turns the simulation
+off (commands then read the clipboard as it is). The `js` and `exec` kinds are listed and can be placed, but answer
+"not available yet" when released. A manifest that fails validation shows its reasons in Settings → Actions instead of
+loading. Removing the folder removes its slices.
 
 The manifest format, the plugin API and the planned host steps are specified in
 [`packages/plugin-api`](packages/plugin-api/README.md). This adds no new network host: declarative commands open

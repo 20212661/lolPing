@@ -189,7 +189,7 @@ describe('plugin settings and command refs on the wheel', () => {
     expect(s.plugins.configs['ai-chat']).toEqual({ model: 'x', n: 3, on: true });
     expect(s.plugins.configs['NOT-AN-ID']).toBeUndefined();
     expect(s.plugins.configs.broken).toBeUndefined();
-    expect(DEFAULT_SETTINGS.plugins).toEqual({ configs: {} });
+    expect(DEFAULT_SETTINGS.plugins).toEqual({ configs: {}, simulateCopy: true });
   });
 
   it('carries the command icons into the overlay settings', () => {

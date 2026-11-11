@@ -1,4 +1,4 @@
-import { app, clipboard, dialog, Menu, powerMonitor, screen, shell, systemPreferences, utilityProcess } from 'electron';
+import { app, ClipboardItem, clipboard, dialog, Menu, powerMonitor, screen, shell, systemPreferences, utilityProcess } from 'electron';
 import { spawn } from 'node:child_process';
 import { randomBytes, randomInt } from 'node:crypto';
 import { readFileSync } from 'node:fs';
@@ -24,6 +24,8 @@ import { updateErrorText, type UpdateState } from '../shared/update';
 import { registerAppScheme, serveAppScheme } from './appProtocol';
 import { CommandHost } from './commandHost';
 import { runDeclarative } from './declarativeRun';
+import { grabSelection, type SelectionDeps } from './selectionGrab';
+import { encodeSteps, tapSteps, triggerVkOf } from '../shared/keySteps';
 import { openAppTargetKind } from './actionOpenApp';
 import { buildPluginList, findCommand, itemExists, listFolderInputs, scanPluginFolders } from './pluginScan';
 import { ActionRuns } from './actionRuns';
@@ -170,6 +172,31 @@ function start(): void {
   };
   configureActions();
   const actionRuns = new ActionRuns();
+  /** The OS abilities selectionGrab needs, wired to this app's clipboard and helper bridge. */
+  const selectionDeps = (): SelectionDeps => ({
+    tap: (steps) => bridge.tap(steps),
+    clipboard: {
+      readText: () => clipboard.readText(),
+      readAll: async () => {
+        const out: { mimetype: string; blob: Blob }[] = [];
+        for (const item of await clipboard.read()) {
+          for (const mimetype of item.types) {
+            if (mimetype === 'electron application/bookmark') continue; // an object, not a Blob: not round-trippable
+            try {
+              out.push({ mimetype, blob: await item.getType(mimetype) as Blob }); // bookmark types are skipped above
+            } catch {
+              // a format that vanished between read() and getType(): skip it
+            }
+          }
+        }
+        return out;
+      },
+      writeAll: (items) => clipboard.write([new ClipboardItem(Object.fromEntries(items.map((i) => [i.mimetype, i.blob])))]),
+      clear: () => clipboard.clear(),
+    },
+    sleep: (ms) => new Promise<void>((resolve) => setTimeout(resolve, ms)),
+    now: Date.now,
+  });
   /** Starts a detached process for a declarative command's target; a start failure comes back synchronously. */
   const spawnCommand = (file: string, args: string[]): boolean => {
     try {
@@ -181,7 +208,7 @@ function start(): void {
       return false;
     }
   };
-  /** Runs a scanned plugin's declarative command (url/open); the other run kinds answer "not yet". */
+  /** Runs a scanned plugin's declarative command (url/open/keys); js and exec answer "not yet". */
   const runScannedCommand = (found: ReturnType<typeof findCommand>, a: SharedAction): void => {
     if (!found) return;
     const { plugin, command } = found;
@@ -196,17 +223,36 @@ function start(): void {
       overlays.clearActionBubble(a.displayId);
     }
     void (async () => {
-      // Selection reading arrives with the input step; until then a text-requiring command reads the clipboard.
-      const clip = (command.requires ?? []).includes('text') ? await clipboard.readText().catch(() => '') : '';
-      const outcome = runDeclarative(command, clip, settings.plugins.configs[plugin.manifest.id] ?? {});
-      const stillCurrent = actionRuns.finish(run);
-      if (quitting || !stillCurrent) return;
       const fail = (body: string): void => overlays.actionBubble(a.displayId, { ...at, state: 'error', title, body });
-      if (outcome.kind === 'unsupported') return fail(t.actionUnsupported);
-      if (outcome.kind === 'noText') return fail(t.actionErrors.noText);
       const done = (): void => {
         if (command.feedback === 'result') overlays.actionBubble(a.displayId, { ...at, state: 'done', title, body: t.actionDone });
       };
+      // A text-requiring command gets the selection when synthesis is allowed (Ctrl+C with clipboard
+      // restore); without it, or when that finds nothing, the clipboard stands in.
+      let clip = '';
+      if ((command.requires ?? []).includes('text')) {
+        const vk = triggerVkOf(settings.trigger);
+        if (PLATFORM === 'win' && settings.plugins.simulateCopy && bridge.status === 'running' && vk !== null) {
+          const sel = await grabSelection(selectionDeps(), vk).catch(() => null);
+          if (sel !== null) clip = sel;
+        }
+        if (!clip) clip = await clipboard.readText().catch(() => '');
+      }
+      // keys runs through the same inject queue as gesture replay; run.kind delayMs between combos waits for a later host step.
+      if (command.run.kind === 'keys') {
+        if (PLATFORM !== 'win' || bridge.status !== 'running') return fail(t.actionUnsupported);
+        for (const combo of command.run.keys) {
+          const steps = tapSteps(combo);
+          if (!steps) return fail(t.actionErrors.parse);
+          if (!(await bridge.tap(encodeSteps(steps)))) return fail(t.actionErrors.spawn);
+        }
+        return done();
+      }
+      const outcome = runDeclarative(command, clip, settings.plugins.configs[plugin.manifest.id] ?? {});
+      const stillCurrent = actionRuns.finish(run);
+      if (quitting || !stillCurrent) return;
+      if (outcome.kind === 'unsupported') return fail(t.actionUnsupported);
+      if (outcome.kind === 'noText') return fail(t.actionErrors.noText);
       try {
         if (outcome.kind === 'openUrl') {
           await shell.openExternal(outcome.url);

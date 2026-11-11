@@ -1,5 +1,5 @@
 import { Button, Dropdown, Input, Option, Switch } from '@fluentui/react-components';
-import { CodeRegular, OpenRegular, SearchRegular, SparkleRegular } from '@fluentui/react-icons';
+import { ClipboardPasteRegular, CodeRegular, OpenRegular, SearchRegular, SparkleRegular } from '@fluentui/react-icons';
 import { useEffect, useState, type KeyboardEvent } from 'react';
 import type { ManifestErrorCode } from '../../../../packages/plugin-api/src/validate';
 import { defaultCustomAction, MAX_CUSTOM_ACTIONS, type ActionsSettings, type CustomAction } from '../../../shared/actionCatalog';
@@ -89,7 +89,7 @@ export function ActionsSection(
   };
   const setPluginValue = (pluginId: string, key: string, value: string | number | boolean): void => {
     const current = s.plugins.configs[pluginId] ?? {};
-    void update({ plugins: { configs: { ...s.plugins.configs, [pluginId]: { ...current, [key]: value } } } });
+    void update({ plugins: { ...s.plugins, configs: { ...s.plugins.configs, [pluginId]: { ...current, [key]: value } } } });
   };
   return (
     <>
@@ -150,6 +150,12 @@ export function ActionsSection(
         <Button onClick={onRefreshPlugins}>{t.pluginsRefresh}</Button>
         <Button onClick={() => void api.openPluginsFolder()}>{t.pluginsOpenFolder}</Button>
       </div>
+      {api.platform === 'win' ? (
+        <SettingRow icon={<ClipboardPasteRegular />} title={t.pluginsSimulateCopy} description={t.pluginsSimulateCopyDesc}>
+          <Switch checked={s.plugins.simulateCopy}
+            onChange={(_, d) => void update({ plugins: { ...s.plugins, simulateCopy: d.checked } })} />
+        </SettingRow>
+      ) : null}
       {plugins !== null && plugins.plugins.length === 0 && plugins.failures.length === 0 ? (
         <p className="desc">{t.pluginsNone}</p>
       ) : null}

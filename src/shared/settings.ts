@@ -34,13 +34,15 @@ export type PluginConfigValues = Record<string, string | number | boolean>;
 
 export interface PluginsSettings {
   configs: Record<string, PluginConfigValues>;
+  /** Reading a selection by simulating Ctrl+C and restoring the clipboard (Windows). */
+  simulateCopy: boolean;
 }
 
-export const DEFAULT_PLUGINS: PluginsSettings = { configs: {} };
+export const DEFAULT_PLUGINS: PluginsSettings = { configs: {}, simulateCopy: true };
 
 /** Well-formed ids only, primitive values only, bounded: anything else in the file is dropped. */
 function normalizePlugins(raw: unknown): PluginsSettings {
-  if (!isObj(raw) || !isObj(raw.configs)) return { configs: {} };
+  if (!isObj(raw) || !isObj(raw.configs)) return { ...DEFAULT_PLUGINS };
   const configs: PluginsSettings['configs'] = {};
   for (const [id, values] of Object.entries(raw.configs)) {
     if (!ID_PATTERN.test(id) || Object.keys(configs).length >= 64 || !isObj(values)) continue;
@@ -52,7 +54,7 @@ function normalizePlugins(raw: unknown): PluginsSettings {
     }
     configs[id] = cfg;
   }
-  return { configs };
+  return { configs, simulateCopy: raw.simulateCopy !== false };
 }
 
 export interface Settings {
@@ -140,7 +142,7 @@ export const DEFAULT_SETTINGS: Settings = {
   wheelSizePx: WHEEL.size,
   wheel: [...DEFAULT_WHEEL],
   actions: defaultActions(),
-  plugins: { configs: {} },
+  plugins: { ...DEFAULT_PLUGINS },
   toggleHotkey: { mods: MOD.ctrl | MOD.alt, vk: 0x50 },
   textHotkey: { mods: MOD.alt, vk: 0x54 },
   panelKey: 0x09,

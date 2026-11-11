@@ -480,3 +480,26 @@ contract's README. Tile icons are inline SVG data URLs (text glyphs) or the plug
 main process, and they ride to the overlays inside `OverlaySettings.commands` (`ref → icon`), so the wheel
 needs no new asset channel. The whole path was smoke-tested in the built app: a probe plugin listed in the
 settings, a release on its slice opening the URL and the `done` bubble rendering in the live overlay DOM.
+
+### 16.3 Selection reading and key synthesis (step 4)
+
+`keys` commands and selection reading synthesize input through the hook helper, reusing its gesture-replay
+machinery: a `tap` command carries a flat `"vk:1,vk:0"` step string, queued on the same inject queue as
+replayed gesture events (so synthesis cannot overtake them), sent as `SendInput` with the helper's
+"LPIN" `dwExtraInfo` marker, and acked with a `tapped` event. Injected events are `selfInjected` to the
+hooks and ignored by the decision state machine, exactly like gesture replay. The C++ side gained only the
+command: parse (64 steps at most, vk 1–254), queue and ack.
+
+`keySteps.ts` (pure) maps names to Windows vks ("ctrl+shift+v" → steps, modifiers pressed then released in
+reverse) and builds the copy sequence: the wheel trigger is lifted first — a held Alt would reach the app as
+Alt+Ctrl+C — and held again after; mouse triggers need no lift. `selectionGrab.ts` orchestrates around the
+synthesized Ctrl+C: capture the clipboard, wait for the text to change (bounded, ~800 ms; an unchanged
+clipboard still yields its text, since the selection may equal what was there), then restore. Electron 44's
+clipboard is mimetype-based and async, so the capture is `read()` items as Blobs and the restore is one
+atomic `write()` — bookmark objects, the one non-Blob type, are skipped. A `plugins.simulateCopy` setting
+(Windows, default on) gates the whole path; off, or when the helper is gone, text commands read the
+clipboard as it is. The UI-Automation-first read from the contract's decision 5 lands as a later refinement
+on top of this path. Smoke-tested in the built app: the settings switch shows, a `keys` command round-trips
+through the real helper (tap → ack → done bubble), and a text command completes the grab flow. Whether the
+synthesized keys reach an elevated or foreground app is a UIPI question the agent sandbox cannot answer;
+that needs a hand-run check from a normal (non-sandboxed) launch.

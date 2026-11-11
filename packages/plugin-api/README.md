@@ -73,9 +73,11 @@ authors keep the language of their own titles and results.
 
 ## Implementation steps
 
-Status: steps 1–3 have landed (the scan, the settings list and configuration forms, `CommandRef` wheel
-bindings, and the `url`/`open` declarative executors; `keys` reports "not available yet" until step 4).
-Each step leaves the app working and independently testable.
+Status: steps 1–4 have landed (the scan, the settings list and configuration forms, `CommandRef` wheel
+bindings, the `url`/`open`/`keys` declarative executors, and selection reading via simulated Ctrl+C with
+clipboard restore, gated by the simulate-copy setting; UI-Automation-first selection arrives later, and
+`js`/`exec` report "not available yet" until steps 5–6). Each step leaves the app working and
+independently testable.
 
 1. Land this package in `packages/plugin-api`; the host imports its types and `validateManifest` directly.
 2. **Plugin folder scan**: validate with `validateManifest`, list commands in the settings (with permission

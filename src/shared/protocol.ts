@@ -15,6 +15,7 @@ export type HelperEvent =
   | { type: 'toggled'; enabled: boolean }
   | { type: 'textRequested' }
   | { type: 'panel'; show: boolean }
+  | { type: 'tapped' }
   | { type: 'error'; message: string; code?: string }
   | { type: 'sim'; swallow: boolean; inject: string };
 
@@ -46,6 +47,8 @@ export function parseHelperLine(line: string): HelperEvent | null {
       return typeof o.enabled === 'boolean' ? { type: 'toggled', enabled: o.enabled } : null;
     case 'textRequested':
       return { type: 'textRequested' };
+    case 'tapped':
+      return { type: 'tapped' };
     case 'panel':
       return typeof o.show === 'boolean' ? { type: 'panel', show: o.show } : null;
     case 'error':
@@ -89,6 +92,8 @@ export type HelperCommand =
     }
   | { type: 'setEnabled'; enabled: boolean }
   | { type: 'suspend'; on: boolean }
+  /** Runs a synthesized key sequence ("steps" = "vk:1,vk:0", down/up) through the gesture inject queue. */
+  | { type: 'tap'; steps: string }
   | { type: 'shutdown' };
 
 /**

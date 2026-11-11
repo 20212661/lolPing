@@ -96,6 +96,42 @@ Command parseCommand(const std::string& line, const Config& current) {
     c.flag = getBool(m, "on", false);
   } else if (type == "shutdown") {
     c.kind = Command::Kind::Shutdown;
+  } else if (type == "tap") {
+    // "steps" is "vk:1,vk:0,..." (1 = key down, 0 = key up), so the flat parser never sees an array.
+    const std::string steps = getStr(m, "steps");
+    std::vector<Inject> taps;
+    bool ok = !steps.empty();
+    size_t pos = 0;
+    while (ok && pos < steps.size()) {
+      if (taps.size() >= 64) { ok = false; break; }
+      size_t used = 0;
+      long long vk = 0;
+      long long down = 0;
+      try {
+        vk = std::stoll(steps.substr(pos), &used);
+        pos += used;
+        ok = ok && steps[pos] == ':' && used > 0;
+        if (!ok) break;
+        ++pos;
+        down = std::stoll(steps.substr(pos), &used);
+        pos += used;
+      } catch (...) {
+        ok = false;
+        break;
+      }
+      ok = ok && vk >= 1 && vk <= 254 && (down == 0 || down == 1);
+      if (!ok) break;
+      taps.push_back(Inject{down == 1 ? InjectKind::KeyDown : InjectKind::KeyUp, Btn::None, static_cast<uint32_t>(vk)});
+      if (pos < steps.size()) {
+        if (steps[pos] != ',') { ok = false; break; }
+        ++pos;
+        if (pos >= steps.size()) { ok = false; break; }  // a trailing comma ends the list early
+      }
+    }
+    if (ok && !taps.empty()) {
+      c.kind = Command::Kind::Tap;
+      c.taps = std::move(taps);
+    }
   } else if (type == "sim") {
     const std::string ev = getStr(m, "ev");
     c.timeMs = static_cast<uint64_t>(getInt(m, "t", 0));

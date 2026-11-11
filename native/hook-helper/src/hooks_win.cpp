@@ -272,6 +272,12 @@ int runHooks(Output& out) {
         case Command::Kind::SetEnabled: apply(decision.setEnabled(c.flag)); break;
         case Command::Kind::Suspend: apply(decision.setSuspended(c.flag)); break;
         case Command::Kind::Shutdown: PostQuitMessage(0); break;
+        case Command::Kind::Tap:
+          // Host-initiated synthesis (plugin commands, selection copy). Queued behind any gesture replay,
+          // so the sequence cannot overtake earlier injects; the ack may precede the drain by one message.
+          queueInjects(c.taps);
+          out.line("{\"type\":\"tapped\"}");
+          break;
         default: out.error("invalid command: " + *text); break;
       }
     }

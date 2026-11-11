@@ -2,7 +2,7 @@ import { spawn, type ChildProcess } from 'node:child_process';
 import { EventEmitter } from 'node:events';
 import { createInterface } from 'node:readline';
 import {
-  HELPER_EXIT_NO_ACCESS, parseHelperLine, serializeCommand, type HelperCommand, type HelperStatus,
+  HELPER_EXIT_NO_ACCESS, parseHelperLine, serializeCommand, type HelperCommand, type HelperEvent, type HelperStatus,
 } from '../shared/protocol';
 import { RestartPolicy } from './restartPolicy';
 
@@ -64,6 +64,23 @@ export class InputBridge extends EventEmitter {
   send(cmd: HelperCommand): void {
     if (cmd.type === 'config') this.lastConfig = cmd;
     this.write(cmd);
+  }
+
+  /** Sends a tap sequence; resolves true on the helper's ack, false after `timeoutMs` without one. */
+  tap(steps: string, timeoutMs = 2000): Promise<boolean> {
+    return new Promise((resolve) => {
+      const onEvent = (ev: HelperEvent): void => {
+        if (ev.type === 'tapped') finish(true);
+      };
+      const timer = setTimeout(() => finish(false), timeoutMs);
+      const finish = (ok: boolean): void => {
+        clearTimeout(timer);
+        this.off('event', onEvent);
+        resolve(ok);
+      };
+      this.on('event', onEvent);
+      this.send({ type: 'tap', steps });
+    });
   }
 
   /** Manual restart after the bridge gave up. */

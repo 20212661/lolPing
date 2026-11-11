@@ -1175,6 +1175,22 @@ static void test_parse_config_panel_key() {
   CHECK(keep.config.panelVk == 9);
 }
 
+static void test_parse_tap() {
+  const Config cur;
+  // Lift Alt, press Ctrl+C, release both, hold Alt again: the selection-copy sequence the host sends.
+  const Command c = parseCommand(R"({"type":"tap","steps":"164:0,162:1,67:1,67:0,162:0,164:1"})", cur);
+  CHECK(c.kind == Command::Kind::Tap && c.taps.size() == 6);
+  CHECK(c.taps[0].kind == InjectKind::KeyUp && c.taps[0].vk == 164);
+  CHECK(c.taps[1].kind == InjectKind::KeyDown && c.taps[1].vk == 162);
+  CHECK(c.taps[4].kind == InjectKind::KeyUp && c.taps[4].vk == 162);
+  CHECK(c.taps[5].kind == InjectKind::KeyDown && c.taps[5].vk == 164);
+  CHECK(parseCommand(R"({"type":"tap"})", cur).kind == Command::Kind::Invalid);              // no steps
+  CHECK(parseCommand(R"({"type":"tap","steps":"0:1"})", cur).kind == Command::Kind::Invalid);  // vk out of range
+  CHECK(parseCommand(R"({"type":"tap","steps":"67:2"})", cur).kind == Command::Kind::Invalid); // not 0/1
+  CHECK(parseCommand(R"({"type":"tap","steps":"67"})", cur).kind == Command::Kind::Invalid);   // no down/up
+  CHECK(parseCommand(R"({"type":"tap","steps":"67:0,"})", cur).kind == Command::Kind::Invalid); // trailing comma
+}
+
 static void test_json_parses_flat_objects() {
   std::map<std::string, std::string> m;
   CHECK(parseFlatJson(R"({"type":"config","enabled":true,"dragThresholdPx":8,"trigger":"alt"})", m));
@@ -1336,6 +1352,7 @@ int main() {
   test_parse_config_emote_fields();
   test_parse_config_text_hotkey();
   test_parse_config_panel_key();
+  test_parse_tap();
   test_output_never_blocks_producer();
   test_alt_drag_opens_wheel_and_releases();
   test_plain_click_passes_through();
