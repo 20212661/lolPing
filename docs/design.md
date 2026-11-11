@@ -460,3 +460,23 @@ suppresses duplicate gestures while that action runs, and the runner caps concur
 invocation numbers keep an old completion from replacing a newer bubble. Host reloads are serialized and obsolete
 configurations are skipped. An instant action clears a superseded bubble through `action:clear`, so a cancelled
 progress message cannot stay on screen forever. The API, example and limitations are documented in `docs/plugins.md`.
+
+### 16.2 Scanned plugin folders (`packages/plugin-api`)
+
+The second plugin system reads folders: every subfolder of the settings `plugins` dir with a `plugin.json` is
+validated by the contract package's `validateManifest` (coded errors, no UI text — the settings window maps the
+codes through i18n) and listed in Settings → Actions with its commands. A wheel slot widens again, to
+`PingId | ActionId | CommandRef`, where a ref is `pluginId.commandId`. Refs pass through `normalizeSettings`
+untouched — a settings file cannot know what the disk has — and the main process repairs slots whose ref no
+scan provides back to distinct default pings (`repairUnknownItems`; distinctness matters, a duplicate would void
+the wheel on the next load). Rescan happens on start and whenever the settings window asks (`plugins:list`),
+which also re-pushes overlay settings so slice icons follow.
+
+Commands of run kinds `url` and `open` are declarative: `runDeclarative` (pure) fills `{text}`/`{text:url}`/
+`{config.<key>}` — and nothing else, `%VAR%` stays literal — into an effect the main process applies with the
+same shell abilities the built-in open-app uses. `url` reads the clipboard until selection reading ships.
+`keys`, `js` and `exec` answer a localized "not available yet" bubble; their executors are later steps in the
+contract's README. Tile icons are inline SVG data URLs (text glyphs) or the plugin's icon file inlined by the
+main process, and they ride to the overlays inside `OverlaySettings.commands` (`ref → icon`), so the wheel
+needs no new asset channel. The whole path was smoke-tested in the built app: a probe plugin listed in the
+settings, a release on its slice opening the URL and the `done` bubble rendering in the live overlay DOM.

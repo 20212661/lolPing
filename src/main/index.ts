@@ -4,7 +4,10 @@ import { randomBytes, randomInt } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { userInfo } from 'node:os';
 import { join } from 'node:path';
-import { actionById, isPluginActionId } from '../shared/actionCatalog';
+import { isCommandRef } from '../../packages/plugin-api/src/manifest';
+import { actionById, isPluginActionId, type WheelItem } from '../shared/actionCatalog';
+import { commandIcons } from '../shared/commandTiles';
+import { repairUnknownItems } from '../shared/wheelLayout';
 import { resolveLang, strings, type Strings } from '../shared/i18n';
 import { SETTINGS_CH, type About, type AppStatus, type PanelAction, type PanelState } from '../shared/ipc';
 import { announcedEmoteHashes } from '../shared/emotes';
@@ -20,6 +23,9 @@ import { parseTextInput } from '../shared/textCommands';
 import { updateErrorText, type UpdateState } from '../shared/update';
 import { registerAppScheme, serveAppScheme } from './appProtocol';
 import { CommandHost } from './commandHost';
+import { runDeclarative } from './declarativeRun';
+import { openAppTargetKind } from './actionOpenApp';
+import { buildPluginList, findCommand, itemExists, listFolderInputs, scanPluginFolders } from './pluginScan';
 import { ActionRuns } from './actionRuns';
 import { PluginRunner } from './pluginRunner';
 import { resolveTarget, toShared } from './displayNumbers';
@@ -110,6 +116,13 @@ function start(): void {
   // An imported emote whose still is gone is dropped; normalising the shorter list repairs the wheel slots that used it.
   const kept = library.present(settings.customEmotes);
   if (kept.length !== settings.customEmotes.length) settings = store.update({ customEmotes: kept });
+  // The plugin folder scan: wheel command refs resolve against it, and its icons ride along to the overlays.
+  const pluginRoot = join(settingsDir(), 'plugins');
+  let scan = scanPluginFolders(listFolderInputs(pluginRoot));
+  let pluginList = buildPluginList(scan, pluginRoot);
+  const itemKnown = (id: WheelItem): boolean => itemExists(scan, settings.actions.custom.map((a) => a.id), id);
+  const repairedWheel = repairUnknownItems(settings.wheel, itemKnown);
+  if (repairedWheel.some((id, i) => id !== settings.wheel[i])) settings = store.update({ wheel: repairedWheel });
   // The language setting, or the system display language when it's 'auto'.
   const text = (): Strings => strings(resolveLang(settings.language, app.getLocale()), PLATFORM);
   let enabled = settings.enabledOnStart;
@@ -118,7 +131,7 @@ function start(): void {
   let textOpen = false;
 
   const overlays = new OverlayManager(
-    overlaySettings(settings),
+    overlaySettings(settings, commandIcons(pluginList)),
     (ref, remote) =>
       resolveEmoteArt(ref, settings.customEmotes, remote, (hash) => {
         if (!settings.friendEmotes || !cache.has(hash)) return false; // off: friends' images show as the placeholder
@@ -157,7 +170,70 @@ function start(): void {
   };
   configureActions();
   const actionRuns = new ActionRuns();
+  /** Starts a detached process for a declarative command's target; a start failure comes back synchronously. */
+  const spawnCommand = (file: string, args: string[]): boolean => {
+    try {
+      const child = spawn(file, args, { detached: true, stdio: 'ignore', windowsHide: true });
+      child.unref();
+      child.on('error', (err) => console.warn('[plugins]', err.message)); // a missing program only surfaces here
+      return true;
+    } catch {
+      return false;
+    }
+  };
+  /** Runs a scanned plugin's declarative command (url/open); the other run kinds answer "not yet". */
+  const runScannedCommand = (found: ReturnType<typeof findCommand>, a: SharedAction): void => {
+    if (!found) return;
+    const { plugin, command } = found;
+    const t = text();
+    const at = { x: a.x, y: a.y };
+    const title = command.title;
+    const run = actionRuns.start(a.id, a.displayId);
+    if (!run) return;
+    if (command.feedback === 'result') {
+      overlays.actionBubble(a.displayId, { ...at, state: 'running', title, body: t.actionBubbleRunning });
+    } else {
+      overlays.clearActionBubble(a.displayId);
+    }
+    void (async () => {
+      // Selection reading arrives with the input step; until then a text-requiring command reads the clipboard.
+      const clip = (command.requires ?? []).includes('text') ? await clipboard.readText().catch(() => '') : '';
+      const outcome = runDeclarative(command, clip, settings.plugins.configs[plugin.manifest.id] ?? {});
+      const stillCurrent = actionRuns.finish(run);
+      if (quitting || !stillCurrent) return;
+      const fail = (body: string): void => overlays.actionBubble(a.displayId, { ...at, state: 'error', title, body });
+      if (outcome.kind === 'unsupported') return fail(t.actionUnsupported);
+      if (outcome.kind === 'noText') return fail(t.actionErrors.noText);
+      const done = (): void => {
+        if (command.feedback === 'result') overlays.actionBubble(a.displayId, { ...at, state: 'done', title, body: t.actionDone });
+      };
+      try {
+        if (outcome.kind === 'openUrl') {
+          await shell.openExternal(outcome.url);
+          return done();
+        }
+        const kind = openAppTargetKind(outcome.target);
+        if (kind === 'empty') return fail(t.actionErrors.unconfigured);
+        if (kind === 'url' && outcome.args.length === 0) {
+          await shell.openExternal(outcome.target);
+        } else if (outcome.args.length > 0) {
+          if (!spawnCommand(outcome.target, outcome.args)) return fail(t.actionErrors.spawn);
+        } else {
+          const problem = await shell.openPath(outcome.target);
+          if (problem !== '') return fail(t.actionErrors.spawn);
+        }
+        done();
+      } catch (err) {
+        console.warn(`[plugins] ${a.id}: ${String(err)}`);
+        fail(t.actionErrors.spawn);
+      }
+    })();
+  };
   overlays.on('actioned', (a: SharedAction) => {
+    if (isCommandRef(a.id)) {
+      runScannedCommand(findCommand(scan, a.id), a);
+      return;
+    }
     const def = actionById(a.id);
     const custom = settings.actions.custom.find((item) => item.id === a.id);
     if (!def && !custom) return;
@@ -629,7 +705,7 @@ function start(): void {
     sendConfig();
     syncRoomText();
     syncRoomVotes();
-    overlays.updateSettings(overlaySettings(s));
+    overlays.updateSettings(overlaySettings(s, commandIcons(pluginList)));
     settingsWindow()?.webContents.send(SETTINGS_CH.changed, s);
     if (s.language !== previous.language) tray.setText(text());
     if (
@@ -687,6 +763,20 @@ function start(): void {
     },
     text,
     platform: PLATFORM,
+    plugins: {
+      list: () => {
+        scan = scanPluginFolders(listFolderInputs(pluginRoot));
+        pluginList = buildPluginList(scan, pluginRoot);
+        const known = (id: WheelItem): boolean => itemExists(scan, settings.actions.custom.map((a) => a.id), id);
+        const repaired = repairUnknownItems(settings.wheel, known);
+        if (repaired.some((id, i) => id !== settings.wheel[i])) settings = store.update({ wheel: repaired });
+        else overlays.updateSettings(overlaySettings(settings, commandIcons(pluginList))); // new icons with no settings change
+        return pluginList;
+      },
+      openFolder: async () => {
+        await shell.openPath(pluginRoot);
+      },
+    },
     update: updater
       ? { state: () => updater.state, notesUrl: () => updater.notesUrl, check: () => updater.check(true), start: () => updater.startUpdate() }
       : undefined,

@@ -1,5 +1,5 @@
 import { EMOTE_CATALOG } from '../../shared/emoteCatalog';
-import { isActionId } from '../../shared/actionCatalog';
+import { isActionId, isCommandRef } from '../../shared/actionCatalog';
 import { showBubble } from './actionBubble';
 import {
   CUSTOM_EMOTE_URL, allEmoteAssetFiles, catalogEmote, customAnimUrl, customHash, customSoundUrl, customStillUrl, emoteSoundUrl,
@@ -73,7 +73,7 @@ function applySettings(s: OverlaySettings): void {
   if (!s.keepLastPing) dropKeptPing();
   pingWheel.setSize(s.wheelSizePx);
   emoteWheel.setSize(s.wheelSizePx);
-  pingWheel.setItems(wheelItemsFor(s.wheel));
+  pingWheel.setItems(wheelItemsFor(s.wheel, s.commands));
   emoteWheel.setItems(s.emoteWheel.map((ref) => emoteItem(ref, s.customEmotes)));
   const { ping, emote } = centerIcons(s);
   pingWheel.setCenterIcon(ping);
@@ -106,8 +106,8 @@ window.overlay.on('wheel:release', (p) => {
   if (p.wheel === 'emote') {
     emote('self', localArt(chosen.key), chosen.x, chosen.y);
     window.overlay.reportEmote(chosen.key, chosen.x, chosen.y);
-  } else if (isActionId(chosen.key)) {
-    // A released action runs in the main process; its bubble (if any) comes back to this overlay.
+  } else if (isActionId(chosen.key) || isCommandRef(chosen.key)) {
+    // A released action or plugin command runs in the main process; its bubble (if any) comes back to this overlay.
     sounds.play('Base', volume());
     window.overlay.reportAction(chosen.key, chosen.x, chosen.y);
   } else {

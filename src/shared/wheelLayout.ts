@@ -1,5 +1,5 @@
 import { isWheelItem, type WheelItem } from './actionCatalog';
-import { WHEEL_SLOTS, isPingId, type PingId } from './pings';
+import { DEFAULT_CLICK_PING, DEFAULT_WHEEL, WHEEL_SLOTS, isPingId, type PingId } from './pings';
 
 /** A wheel is exactly WHEEL_SLOTS known pings, each at most once. */
 export function isValidWheel(v: unknown): v is PingId[] {
@@ -9,6 +9,22 @@ export function isValidWheel(v: unknown): v is PingId[] {
 /** A wheel that may hold actions too: exactly WHEEL_SLOTS pings or actions, each at most once. */
 export function isValidItemWheel(v: unknown): v is WheelItem[] {
   return Array.isArray(v) && v.length === WHEEL_SLOTS && v.every(isWheelItem) && new Set(v).size === v.length;
+}
+
+/**
+ * Wheel slots whose item no longer exists — an action the settings dropped, a command ref no scanned
+ * plugin provides — go back to distinct default pings that aren't already on the wheel. Returns the
+ * wheel unchanged when every item is known.
+ */
+export function repairUnknownItems(wheel: readonly WheelItem[], isKnown: (id: WheelItem) => boolean): WheelItem[] {
+  if (wheel.every(isKnown)) return [...wheel];
+  const used = new Set(wheel.filter((id) => isKnown(id) && isPingId(id)));
+  const replacement = (): PingId => {
+    const ping = DEFAULT_WHEEL.find((p) => !used.has(p)) ?? DEFAULT_CLICK_PING;
+    used.add(ping); // two gone items must not become the same ping: duplicates would void the wheel
+    return ping;
+  };
+  return wheel.map((id) => (isKnown(id) ? id : replacement()));
 }
 
 /** Puts `id` in `slot`. If it is already elsewhere on the wheel, the two slots swap so nothing appears twice. */

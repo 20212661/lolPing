@@ -73,6 +73,8 @@ authors keep the language of their own titles and results.
 
 ## Implementation steps
 
+Status: steps 1–3 have landed (the scan, the settings list and configuration forms, `CommandRef` wheel
+bindings, and the `url`/`open` declarative executors; `keys` reports "not available yet" until step 4).
 Each step leaves the app working and independently testable.
 
 1. Land this package in `packages/plugin-api`; the host imports its types and `validateManifest` directly.

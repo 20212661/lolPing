@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_WHEEL, type PingId } from '../../src/shared/pings';
-import { dropPatch, isValidWheel, placeOnSlot, swapSlots } from '../../src/shared/wheelLayout';
+import { DEFAULT_WHEEL, isPingId, type PingId } from '../../src/shared/pings';
+import type { WheelItem } from '../../src/shared/actionCatalog';
+import { dropPatch, isValidWheel, placeOnSlot, repairUnknownItems, swapSlots } from '../../src/shared/wheelLayout';
 
 const W = [...DEFAULT_WHEEL];
 
@@ -121,5 +122,30 @@ describe('works for string refs', () => {
     expect(dropPatch(E, 'facepalm', { from: 'pool', id: 'nice' }, 'center')).toEqual({ center: 'nice' });
     expect(dropPatch(E, 'facepalm', { from: 'pool', id: custom }, 'center')).toEqual({ center: custom });
     expect(dropPatch(E, 'facepalm', { from: 'pool', id: 'facepalm' }, 'center')).toBeNull();
+  });
+});
+
+describe('repairUnknownItems', () => {
+  const known = (id: WheelItem): boolean => isPingId(id) || id === 'quick-pack.bing' || id === 'plugin:old';
+
+  it('returns an equal wheel when every item is known', () => {
+    const wheel: WheelItem[] = ['danger', 'quick-pack.bing', 'plugin:old', 'push', 'omw', 'allin', 'assist', 'needvision'];
+    expect(repairUnknownItems(wheel, known)).toEqual(wheel);
+  });
+
+  it('replaces a gone ref or action with a default ping that is not already there', () => {
+    const wheel: WheelItem[] = ['danger', 'gone.bing', 'plugin:gone', 'push', 'omw', 'allin', 'assist', 'needvision'];
+    const repaired = repairUnknownItems(wheel, known);
+    expect(repaired[0]).toBe('danger');
+    expect(repaired[1]).toBe('missing'); // first default ping not on the wheel
+    expect(repaired[2]).not.toContain('.');
+    expect(new Set(repaired).size).toBe(8);
+  });
+
+  it('keeps every known item in its slot', () => {
+    const wheel: WheelItem[] = ['quick-pack.bing', 'gone.x', 'danger', 'push', 'omw', 'allin', 'assist', 'needvision'];
+    const repaired = repairUnknownItems(wheel, known);
+    expect(repaired[0]).toBe('quick-pack.bing');
+    expect(repaired[2]).toBe('danger');
   });
 });

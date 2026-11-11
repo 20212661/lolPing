@@ -1,3 +1,4 @@
+import { ID_PATTERN } from '../../packages/plugin-api/src/manifest';
 import { defaultActions, isPluginActionId, normalizeActions, type ActionsSettings, type WheelItem } from './actionCatalog';
 import { DEFAULT_CLICK_EMOTE, DEFAULT_EMOTE_WHEEL } from './emoteCatalog';
 import {
@@ -14,7 +15,7 @@ import { isTagColor, isTagRgb, readableTagRgb, type TagRgb } from './roomColors'
 import { parseRoomCode } from './roomCode';
 import { sanitizeName } from './roomProtocol';
 import { isVersion } from './update';
-import { isValidItemWheel } from './wheelLayout';
+import { isValidItemWheel, repairUnknownItems } from './wheelLayout';
 
 export type NamedTrigger = 'alt' | 'ctrl' | 'shift' | 'win' | 'capslock' | 'mouse4' | 'mouse5';
 export type TriggerKey = NamedTrigger | { vk: number };
@@ -27,6 +28,32 @@ export const keyboardTriggers = (platform: Platform): NamedTrigger[] =>
   platform !== 'win' ? ['alt', 'ctrl', 'shift', 'win'] : ['alt', 'ctrl', 'shift', 'win', 'capslock'];
 
 export type RoomTextStyle = 'spot' | 'danmaku';
+
+/** A plugin's user-set configuration values. 'secret' entries live here too until the plugin host lands. */
+export type PluginConfigValues = Record<string, string | number | boolean>;
+
+export interface PluginsSettings {
+  configs: Record<string, PluginConfigValues>;
+}
+
+export const DEFAULT_PLUGINS: PluginsSettings = { configs: {} };
+
+/** Well-formed ids only, primitive values only, bounded: anything else in the file is dropped. */
+function normalizePlugins(raw: unknown): PluginsSettings {
+  if (!isObj(raw) || !isObj(raw.configs)) return { configs: {} };
+  const configs: PluginsSettings['configs'] = {};
+  for (const [id, values] of Object.entries(raw.configs)) {
+    if (!ID_PATTERN.test(id) || Object.keys(configs).length >= 64 || !isObj(values)) continue;
+    const cfg: PluginConfigValues = {};
+    for (const [key, value] of Object.entries(values).slice(0, 64)) {
+      if (typeof value === 'string' && value.length <= 4096) cfg[key] = value;
+      else if (typeof value === 'number' && Number.isFinite(value)) cfg[key] = value;
+      else if (typeof value === 'boolean') cfg[key] = value;
+    }
+    configs[id] = cfg;
+  }
+  return { configs };
+}
 
 export interface Settings {
   version: 1;
@@ -44,6 +71,8 @@ export interface Settings {
   wheel: WheelItem[];
   /** What each wheel action does when it runs; see actionCatalog.ts. */
   actions: ActionsSettings;
+  /** Values the user set for scanned plugins' configuration entries, by plugin id then key. */
+  plugins: PluginsSettings;
   toggleHotkey: Hotkey;
   /** Opens the custom text message dialog. */
   textHotkey: Hotkey;
@@ -111,6 +140,7 @@ export const DEFAULT_SETTINGS: Settings = {
   wheelSizePx: WHEEL.size,
   wheel: [...DEFAULT_WHEEL],
   actions: defaultActions(),
+  plugins: { configs: {} },
   toggleHotkey: { mods: MOD.ctrl | MOD.alt, vk: 0x50 },
   textHotkey: { mods: MOD.alt, vk: 0x54 },
   panelKey: 0x09,
@@ -305,13 +335,12 @@ export function normalizeSettings(raw: unknown, platform: Platform = 'win', iden
   const emoteVk = triggerVk(triggersClash(pingTrigger, emote, toggleHotkey) ? 'off' : emote);
   const custom = customEmotes(r.customEmotes);
   const actions = normalizeActions(r.actions);
-  const wheel = isValidItemWheel(r.wheel) ? [...r.wheel] : [...DEFAULT_WHEEL];
-  for (let i = 0; i < wheel.length; i++) {
-    const id = wheel[i];
-    if (isPluginActionId(id) && !actions.custom.some((a) => a.id === id)) {
-      wheel[i] = DEFAULT_WHEEL.find((ping) => !wheel.includes(ping)) ?? DEFAULT_CLICK_PING;
-    }
-  }
+  const plugins = normalizePlugins(r.plugins);
+  // Wheel repair: a dropped custom action's slots go back to distinct default pings (command refs are kept;
+  // the main process repairs those against the plugin scan, which a settings file cannot know).
+  const wheel = isValidItemWheel(r.wheel)
+    ? repairUnknownItems(r.wheel, (id) => !isPluginActionId(id) || actions.custom.some((a) => a.id === id))
+    : [...DEFAULT_WHEEL];
   return {
     version: 1,
     enabledOnStart: bool(r.enabledOnStart, 'enabledOnStart'),
@@ -323,6 +352,7 @@ export function normalizeSettings(raw: unknown, platform: Platform = 'win', iden
     clickPingId: isPingId(r.clickPingId) ? r.clickPingId : DEFAULT_CLICK_PING,
     wheel,
     actions,
+    plugins,
     toggleHotkey,
     textHotkey,
     panelKey: panelKey(r.panelKey, [triggerVk(pingTrigger), emoteVk, toggleHotkey.vk, textHotkey.vk]),
@@ -389,14 +419,18 @@ export type OverlaySettings = Pick<
   Settings,
   'pingSizePx' | 'pingDurationS' | 'keepLastPing' | 'volume' | 'muted' | 'tickSound' | 'wheelSizePx' | 'wheel' | 'clickPingId'
   | 'emoteWheel' | 'clickEmoteId' | 'emoteSizePx' | 'emoteSound' | 'customEmotes'
->;
+> & {
+  /** Icon data URLs for the wheel's command-ref slots, ref → icon, from the latest plugin scan. */
+  commands: Record<string, string>;
+};
 
 /** How loud lolPing's sounds play, 0 to 1: the volume setting, or 0 when muted. */
 export const soundLevel = (s: Pick<Settings, 'volume' | 'muted'>): number => (s.muted ? 0 : s.volume / 100);
 
-export const overlaySettings = (s: Settings): OverlaySettings => ({
+export const overlaySettings = (s: Settings, commands: Record<string, string> = {}): OverlaySettings => ({
   pingSizePx: s.pingSizePx, pingDurationS: s.pingDurationS, keepLastPing: s.keepLastPing, volume: s.volume, muted: s.muted, tickSound: s.tickSound,
   wheelSizePx: s.wheelSizePx, wheel: [...s.wheel], clickPingId: s.clickPingId,
   emoteWheel: [...s.emoteWheel], clickEmoteId: s.clickEmoteId, emoteSizePx: s.emoteSizePx, emoteSound: s.emoteSound,
   customEmotes: s.customEmotes.map((c) => ({ ...c })),
+  commands: { ...commands },
 });

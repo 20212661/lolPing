@@ -5,7 +5,8 @@ import {
   Apps24Regular, Timer24Regular, Cursor24Regular, Emoji24Regular, LocalLanguage24Regular, PeopleCommunity24Regular, Flash24Regular,
 } from '@fluentui/react-icons';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { ACTIONS, actionIconUrl, type WheelItem } from '../../shared/actionCatalog';
+import { ACTIONS, actionIconUrl, type CommandRef, type WheelItem } from '../../shared/actionCatalog';
+import { parsePluginList, type PluginListResult } from '../../shared/commandTiles';
 import { LANGUAGE_NAMES, LANGUAGE_PREFS, resolveLang, strings, type LanguagePref, type Strings } from '../../shared/i18n';
 import type { AppStatus } from '../../shared/ipc';
 import { featureOn, type FeatureId } from '../../shared/features';
@@ -100,6 +101,14 @@ function SettingsPage({ settings: s, status, update }: { settings: Settings; sta
   const off = !status.enabled || status.helper === 'failed';
   const trigger = triggerLabel(s.trigger, t.lang, PLATFORM);
   const [hotkeyError, setHotkeyError] = useState<string | null>(null);
+  // The plugin folder scan: fetched once, and again whenever the actions section refreshes it.
+  const [pluginList, setPluginList] = useState<PluginListResult | null>(null);
+  useEffect(() => {
+    void api.getPlugins().then((raw) => setPluginList(parsePluginList(raw)));
+  }, []);
+  const refreshPlugins = (): void => {
+    void api.getPlugins().then((raw) => setPluginList(parsePluginList(raw)));
+  };
   const mouseTrigger = s.trigger === 'mouse4' || s.trigger === 'mouse5';
   const customTrigger = typeof s.trigger === 'object';
   const pingPool: PoolItem<PingId>[] = ALL_PINGS.map((p) => ({
@@ -109,7 +118,9 @@ function SettingsPage({ settings: s, status, update }: { settings: Settings; sta
   const customPool: PoolItem<WheelItem>[] = s.actions.custom.map((a) => ({
     id: a.id, icon: actionIconUrl(a.id), name: a.name, badge: a.enabled ? undefined : t.pluginDisabled,
   }));
-  const wheelPool: PoolItem<WheelItem>[] = [...pingPool, ...actionPool, ...customPool];
+  const commandPool: PoolItem<WheelItem>[] = (pluginList?.plugins ?? []).flatMap((p) =>
+    p.commands.map((c) => ({ id: c.ref as CommandRef, icon: c.icon, name: c.title })));
+  const wheelPool: PoolItem<WheelItem>[] = [...pingPool, ...actionPool, ...customPool, ...commandPool];
 
   useEffect(() => {
     const show = (id: string) => document.getElementById(id)?.scrollIntoView({ behavior: 'smooth' });
@@ -216,7 +227,7 @@ function SettingsPage({ settings: s, status, update }: { settings: Settings; sta
           onPreview={(id) => { if (isPingId(id)) void api.previewPing(id); }} />
 
         <div className="section" id="actions">{t.navActions}</div>
-        <ActionsSection settings={s} update={update} />
+        <ActionsSection settings={s} update={update} plugins={pluginList} onRefreshPlugins={refreshPlugins} />
 
         {featureOn(s, 'emotes') ? (
           <>

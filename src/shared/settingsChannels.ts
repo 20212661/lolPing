@@ -13,6 +13,8 @@ export const SETTINGS_CH = {
   emoteSound: 'emote:sound',
   emoteFx: 'emote:fx',
   about: 'app:about',
+  pluginsList: 'plugins:list',
+  pluginsOpenFolder: 'plugins:openFolder',
   openFolder: 'app:openSettingsFolder',
   openProject: 'app:openProjectPage',
   retryHelper: 'app:retryHelper',

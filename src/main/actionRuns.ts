@@ -1,16 +1,17 @@
-import type { ActionId } from '../shared/actionCatalog';
+/** The id of a wheel item that runs: a v2 action id or a scanned command ref. */
+type RunId = string;
 
 interface ActionRun {
-  id: ActionId;
+  id: RunId;
   displayId: number;
 }
 
 /** One run per action; only the newest invocation on a display may update its result bubble. */
 export class ActionRuns {
-  private readonly active = new Map<ActionId, ActionRun>();
+  private readonly active = new Map<RunId, ActionRun>();
   private readonly latest = new Map<number, ActionRun>();
 
-  start(id: ActionId, displayId: number): ActionRun | null {
+  start(id: RunId, displayId: number): ActionRun | null {
     if (this.active.has(id)) return null;
     const run = { id, displayId };
     this.active.set(id, run);

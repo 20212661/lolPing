@@ -1,4 +1,5 @@
 import { globalShortcut, ipcMain, shell } from 'electron';
+import type { PluginListResult } from '../shared/commandTiles';
 import { isCustomRef, isEmoteFx, isEmoteRefShape, type CustomEmote, type EmoteRef, type ImportResult, type SoundResult } from '../shared/emotes';
 import type { Strings } from '../shared/i18n';
 import { SETTINGS_CH, type About, type AppStatus, type SetSettingsResult } from '../shared/ipc';
@@ -27,6 +28,11 @@ export interface SettingsIpcDeps {
   retryHelper(): void;
   setCapturing(on: boolean): void;
   openAccessibility(): void;
+  /** The scanned plugins: each list() rescans the folder, so the window can refresh at will. */
+  plugins: {
+    list(): PluginListResult;
+    openFolder(): Promise<void>;
+  };
   /** Strings in the app's current language. */
   text(): Strings;
   platform: Platform;
@@ -140,6 +146,10 @@ export function registerSettingsIpc(d: SettingsIpcDeps): void {
     d.store.update({ customEmotes: d.store.get().customEmotes.map((c) => (c.id === id ? { ...c, fx } : c)) });
   });
   ipcMain.handle(SETTINGS_CH.about, () => d.about());
+  ipcMain.handle(SETTINGS_CH.pluginsList, () => d.plugins.list());
+  ipcMain.handle(SETTINGS_CH.pluginsOpenFolder, async () => {
+    await d.plugins.openFolder();
+  });
   ipcMain.handle(SETTINGS_CH.openFolder, async () => {
     await shell.openPath(d.store.dir);
   });

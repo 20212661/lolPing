@@ -162,6 +162,13 @@ main.content { overflow: auto; padding: 4px 28px 28px 20px; }
 .pluginFields label { display: flex; flex-direction: column; gap: 5px; }
 .pluginFields label > span { width: 100% !important; }
 .pluginButtons { display: flex; justify-content: space-between; align-items: center; }
+.pluginButtons > button + button { margin-left: 8px; }
+.pluginHead { display: flex; align-items: baseline; gap: 10px; }
+.permBadges { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.permBadge { padding: 1px 8px; border-radius: 9px; border: 1px solid rgba(128, 128, 128, 0.55); font-size: 12px; }
+.pluginErrorList { margin: 0; padding-left: 18px; }
+.pluginConfigTitle { font-weight: 600; }
+.pluginConfigArea { width: 320px; min-height: 64px; resize: vertical; }
 
 /* Linux uses native window decorations and the desktop font. */
 [data-platform="linux"] .app { grid-template-rows: 1fr; }

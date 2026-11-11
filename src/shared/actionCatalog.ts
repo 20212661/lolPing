@@ -1,4 +1,7 @@
+import { isCommandRef } from '../../packages/plugin-api/src/manifest';
 import { isPingId, type PingId } from './pings';
+
+export { isCommandRef };
 
 /**
  * The built-in actions a wheel slice can hold. A released action runs instead of placing a ping; it is never sent
@@ -7,6 +10,8 @@ import { isPingId, type PingId } from './pings';
 export type BuiltinActionId = 'open-app' | 'run-script' | 'ai-explain' | 'clipboard-search';
 export type PluginActionId = `plugin:${string}`;
 export type ActionId = BuiltinActionId | PluginActionId;
+/** A scanned plugin command's full name, from the manifest system (packages/plugin-api). */
+export type CommandRef = import('../../packages/plugin-api/src/manifest').CommandRef;
 
 export const isPluginActionId = (v: unknown): v is PluginActionId =>
   typeof v === 'string' && /^plugin:[a-z0-9][a-z0-9-]{0,63}$/.test(v);
@@ -55,10 +60,14 @@ export function actionById(id: string): ActionDef | undefined {
   return ACTIONS.find((a) => a.id === id);
 }
 
-/** A wheel slot holds either a ping or an action; the centre (trigger + click) stays a ping. */
-export type WheelItem = PingId | ActionId;
+/**
+ * A wheel slot holds a ping, an action, or a scanned plugin's command ref (`pluginId.commandId`). The centre
+ * (trigger + click) stays a ping. A ref in a settings file stays put through normalizeSettings; the main
+ * process repairs refs no scanned plugin provides (repairUnknownItems in wheelLayout.ts).
+ */
+export type WheelItem = PingId | ActionId | CommandRef;
 
-export const isWheelItem = (v: unknown): v is WheelItem => isPingId(v) || isActionId(v);
+export const isWheelItem = (v: unknown): v is WheelItem => isPingId(v) || isActionId(v) || isCommandRef(v);
 
 const ICONS = new Map<ActionId, string>();
 
@@ -172,6 +181,7 @@ export type ActionError =
   | 'unknown'        // it threw, or its plugin wasn't loaded
   | 'unconfigured'   // the action's own settings are empty
   | 'emptyClipboard' // there was no text to work on
+  | 'noText'         // a command that needs text ran without any (selection or clipboard)
   | 'network'        // the request never got an answer
   | 'http'           // the service answered with an error
   | 'parse'          // the answer couldn't be read
@@ -192,7 +202,7 @@ export function parseActionResult(raw: unknown): ActionResult | null {
   const detail = typeof r.detail === 'string' ? r.detail.slice(0, 4000) : undefined;
   if (r.ok === true) return { ok: true, ...(detail ? { detail } : {}) };
   const errors: readonly string[] = [
-    'unknown', 'unconfigured', 'emptyClipboard', 'network', 'http', 'parse', 'spawn',
+    'unknown', 'unconfigured', 'emptyClipboard', 'noText', 'network', 'http', 'parse', 'spawn',
     'timeout', 'busy', 'disabled', 'pluginLoad', 'pluginConfig',
   ];
   if (r.ok === false && typeof r.error === 'string' && errors.includes(r.error)) {

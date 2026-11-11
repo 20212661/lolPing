@@ -54,6 +54,17 @@ const PERMISSIONS: readonly Permission[] = [
   'selection', 'clipboard.read', 'clipboard.write', 'paste', 'keys', 'open', 'shell', 'network',
 ];
 
+/** The known permission ids, for hosts and UIs that need the list at runtime. */
+export const KNOWN_PERMISSIONS: readonly Permission[] = PERMISSIONS;
+
+/** Every error code validateManifest can return, for UIs that check codes at runtime. */
+export const MANIFEST_ERROR_CODES: readonly ManifestErrorCode[] = [
+  'root', 'id', 'name', 'version', 'engines', 'enginesIncompatible', 'main', 'icon', 'permissionUnknown',
+  'configuration', 'configurationKey', 'configurationProperty', 'commands', 'command', 'commandId',
+  'commandIdDuplicate', 'commandTitle', 'commandJsMain', 'permissionMissing', 'run', 'runUrl', 'runKeys',
+  'runTarget', 'runFile', 'runProtocol',
+];
+
 type Obj = Record<string, unknown>;
 const isObj = (v: unknown): v is Obj => typeof v === 'object' && v !== null && !Array.isArray(v);
 const isStr = (v: unknown, max = 1024): v is string => typeof v === 'string' && v.length > 0 && v.length <= max;

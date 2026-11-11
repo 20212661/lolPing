@@ -142,6 +142,25 @@ Each custom action runs in a fresh Electron utility process. The default timeout
 and at most four plugin processes run at once. Plugins are not background services. TypeScript plugins must be compiled
 to JavaScript first. The host uses the project's pinned `cordis` version, not the DeepSeek fork.
 
+## Plugin folder (experimental)
+
+Besides the bindings above, lolPing reads plugins from a `plugins` folder next to its settings (`%APPDATA%\lolPing\plugins`
+on Windows). Each subfolder with a `plugin.json` manifest is listed in Settings → Actions automatically: its name, the
+permissions it asks for, its commands and its configuration fields. Drag a command from the Wheel pool onto a slice,
+the same way as any other item.
+
+Manifest commands with run kinds `url` and `open` run directly in the app, with no process at all: a `url` command
+fills the selected text (or, until selection reading ships, the clipboard text) into `{text:url}` and opens the address;
+an `open` command starts a program with `{config.<key>}` placeholders filled from its settings. The `keys`, `js` and
+`exec` kinds are listed and can be placed, but answer "not available yet" when released. A manifest that fails
+validation shows its reasons in Settings → Actions instead of loading. Removing the folder removes its slices.
+
+The manifest format, the plugin API and the planned host steps are specified in
+[`packages/plugin-api`](packages/plugin-api/README.md). This adds no new network host: declarative commands open
+addresses the manifest names, and nothing is sent anywhere.
+
+
+
 Privacy: the example makes no network requests. Custom plugins can use files and the network with your account's
 permissions; process separation is not a security sandbox. Clipboard text is passed only when enabled for that binding.
 Plugin actions and their results are never sent to a room. This feature adds no fixed network host.

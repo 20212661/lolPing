@@ -1,4 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron';
+import type { CommandRef } from '../../packages/plugin-api/src/manifest';
 import type { ActionId } from '../shared/actionCatalog';
 import type { EmoteRef } from '../shared/emotes';
 import {
@@ -22,8 +23,8 @@ const api = {
   reportEmote(ref: EmoteRef, x: number, y: number): void {
     ipcRenderer.send(OVERLAY_EMOTED, { ref, x, y });
   },
-  /** A wheel slice's action was released on here (CSS px in this overlay); the main process runs it. */
-  reportAction(id: ActionId, x: number, y: number): void {
+  /** A wheel slice's action or plugin command was released on here; the main process runs it. */
+  reportAction(id: ActionId | CommandRef, x: number, y: number): void {
     ipcRenderer.send(OVERLAY_ACTIONED, { id, x, y });
   },
 };

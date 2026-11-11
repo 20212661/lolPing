@@ -1,4 +1,5 @@
 import type { EmoteArt, EmoteFile, EmoteRef, ImportResult, SoundResult } from './emotes';
+import type { PluginListResult } from './commandTiles';
 import type { Lang } from './i18n';
 import type { PingId } from './pings';
 import type { Platform } from './platform';
@@ -184,6 +185,9 @@ export interface SettingsApi {
   /** Stores which signature effect the emote plays; undefined puts it back to the plain pop. */
   setEmoteFx(id: EmoteRef, fx: number | undefined): Promise<void>;
   getAbout(): Promise<About>;
+  /** Rescans the plugins folder and returns what it found; re-validate with parsePluginList before use. */
+  getPlugins(): Promise<PluginListResult | null>;
+  openPluginsFolder(): Promise<void>;
   openSettingsFolder(): Promise<void>;
   openProjectPage(): Promise<void>;
   retryHelper(): Promise<void>;

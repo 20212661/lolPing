@@ -172,6 +172,33 @@ describe('wheel size', () => {
   });
 });
 
+describe('plugin settings and command refs on the wheel', () => {
+  it('keeps well-formed command refs in wheel slots through normalization', () => {
+    const wheel = ['quick-pack.bing', 'danger', 'push', 'omw', 'allin', 'assist', 'needvision', 'missing'];
+    expect(normalizeSettings({ wheel }).wheel[0]).toBe('quick-pack.bing');
+  });
+
+  it('normalizes plugin config values: known shapes kept, the rest dropped', () => {
+    const s = normalizeSettings({
+      plugins: { configs: {
+        'ai-chat': { model: 'x', n: 3, on: true, bad: null, long: 'y'.repeat(5000) },
+        'NOT-AN-ID': { a: 'b' },
+        broken: 'nope',
+      } },
+    });
+    expect(s.plugins.configs['ai-chat']).toEqual({ model: 'x', n: 3, on: true });
+    expect(s.plugins.configs['NOT-AN-ID']).toBeUndefined();
+    expect(s.plugins.configs.broken).toBeUndefined();
+    expect(DEFAULT_SETTINGS.plugins).toEqual({ configs: {} });
+  });
+
+  it('carries the command icons into the overlay settings', () => {
+    const icons = { 'quick-pack.bing': 'data:image/svg+xml,x' };
+    expect(overlaySettings(DEFAULT_SETTINGS, icons).commands).toEqual(icons);
+    expect(overlaySettings(DEFAULT_SETTINGS).commands).toEqual({});
+  });
+});
+
 describe('room settings', () => {
   const identity = { name: 'darren', color: 5 };
 
@@ -526,6 +553,7 @@ describe('helpers', () => {
       pingSizePx: 110, pingDurationS: 3.2, keepLastPing: false, volume: 70, muted: false, tickSound: true,
       wheelSizePx: 600, wheel: ['danger', 'push', 'omw', 'allin', 'assist', 'needvision', 'missing', 'enemyvision'], clickPingId: 'generic',
       emoteWheel: [...DEFAULT_EMOTE_WHEEL], clickEmoteId: DEFAULT_CLICK_EMOTE, emoteSizePx: 150, emoteSound: true, customEmotes: [],
+      commands: {},
     });
   });
 

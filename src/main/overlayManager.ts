@@ -1,5 +1,6 @@
 import { BrowserWindow, ipcMain, screen, type Display, type Rectangle, type WebContents } from 'electron';
 import { EventEmitter } from 'node:events';
+import { isCommandRef } from '../../packages/plugin-api/src/manifest';
 import { isActionId, type ActionId } from '../shared/actionCatalog';
 import { isEmoteRefShape, type EmoteArt, type EmoteRef } from '../shared/emotes';
 import {
@@ -28,9 +29,9 @@ export interface SharedEmote {
   y: number;
 }
 
-/** A wheel action the user just released on, in overlay-local CSS px: it runs here, and the room never hears of it. */
+/** A wheel action or plugin command the user just released on, in overlay-local CSS px: it runs here, and the room never hears of it. */
 export interface SharedAction {
-  id: ActionId;
+  id: ActionId | import('../../packages/plugin-api/src/manifest').CommandRef;
   displayId: number;
   x: number;
   y: number;
@@ -92,7 +93,7 @@ export class OverlayManager extends EventEmitter {
     });
     ipcMain.on(OVERLAY_ACTIONED, (event, raw: unknown) => {
       const p = raw as { id?: unknown; x?: unknown; y?: unknown } | null;
-      if (!p || !isActionId(p.id) || !isNum(p.x) || !isNum(p.y)) return;
+      if (!p || !(isActionId(p.id) || isCommandRef(p.id)) || !isNum(p.x) || !isNum(p.y)) return;
       const displayId = this.displayOf(event.sender);
       if (displayId === undefined) return;
       this.emit('actioned', { id: p.id, displayId, x: p.x, y: p.y } satisfies SharedAction);
