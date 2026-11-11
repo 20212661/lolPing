@@ -1,7 +1,7 @@
 @import '../league.css';
 
 html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; background: transparent; user-select: none; }
-#pings, #emotes, #texts, #toasts { position: fixed; inset: 0; pointer-events: none; }
+#pings, #emotes, #texts, #toasts, #bubbles { position: fixed; inset: 0; pointer-events: none; }
 
 /* ---------- wheel ---------- */
 #wheel, #emoteWheel {
@@ -129,3 +129,26 @@ html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; background:
 .toast small { display: block; color: var(--grey-1); font-size: 12px; }
 @keyframes toastIn { from { transform: translateY(24px); opacity: 0 } to { transform: none; opacity: 1 } }
 @keyframes toastOut { to { transform: translateY(12px); opacity: 0 } }
+
+/* ---------- action bubble: an action's answer by the cursor ---------- */
+.actionBubble {
+  position: absolute; width: 320px; max-height: 40vh; overflow: hidden; padding: 10px 12px 11px;
+  background: rgba(12, 14, 17, .94); border: 1px solid #3d434b; border-left-width: 4px; border-radius: 4px;
+  color: #e8e6e3; font: 13px/18px var(--sans); filter: drop-shadow(0 10px 22px rgba(0, 0, 0, .5));
+  animation: bubbleIn .18s cubic-bezier(.1,.9,.2,1) both;
+}
+.actionBubble b { display: block; font-weight: 600; font-size: 12px; letter-spacing: .4px; margin-bottom: 3px; }
+.actionBubble span {
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 6; overflow: hidden;
+  white-space: pre-line; user-select: none; color: var(--grey-1);
+}
+.actionBubble.running { border-left-color: #f2c518; }
+.actionBubble.running b { color: #f2c518; }
+.actionBubble.done { border-left-color: #35d27a; }
+.actionBubble.done b { color: #35d27a; }
+.actionBubble.done span { color: #d6d9dd; }
+.actionBubble.error { border-left-color: #ff3b55; }
+.actionBubble.error b { color: #ff3b55; }
+.actionBubble.out { animation: bubbleOut .3s ease-in forwards; }
+@keyframes bubbleIn { from { transform: translateY(10px); opacity: 0 } to { transform: none; opacity: 1 } }
+@keyframes bubbleOut { to { transform: translateY(8px); opacity: 0 } }

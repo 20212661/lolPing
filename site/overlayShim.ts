@@ -19,6 +19,9 @@ const api: OverlayApi = {
   reportEmote() {
     // nor emotes
   },
+  reportAction() {
+    // nor a main process to run actions
+  },
 };
 window.overlay = api;
 

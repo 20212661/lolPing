@@ -27,6 +27,9 @@ main.content { overflow: auto; padding: 4px 28px 28px 20px; }
 .desc.inline { display: inline; margin-left: 6px; }
 .card .ctl { display: flex; align-items: center; gap: 10px; }
 .value { min-width: 56px; text-align: right; font-variant-numeric: tabular-nums; }
+/* The AI action's three fields sit under their own row, stacked so long addresses fit. */
+.card.actionFields { display: block; padding: 6px 20px 14px 60px; }
+.card.actionFields label { display: flex; align-items: center; gap: 12px; margin-top: 8px; color: var(--text2); font-size: 13px; }
 /* Fluent draws a tick per step on the rail; with 38-100 steps they merge into a dark dashed line. */
 .card .fui-Slider__rail::before { background-image: none; }
 .status { min-height: 76px; }
@@ -154,6 +157,11 @@ main.content { overflow: auto; padding: 4px 28px 28px 20px; }
 .card.update.failed { border-color: #ff9c48; }
 .card.update.failed .icon { color: #ff9c48; }
 .updateBar { margin-top: 4px; }
+
+.card.pluginFields { display: flex; flex-direction: column; align-items: stretch; gap: 12px; }
+.pluginFields label { display: flex; flex-direction: column; gap: 5px; }
+.pluginFields label > span { width: 100% !important; }
+.pluginButtons { display: flex; justify-content: space-between; align-items: center; }
 
 /* Linux uses native window decorations and the desktop font. */
 [data-platform="linux"] .app { grid-template-rows: 1fr; }

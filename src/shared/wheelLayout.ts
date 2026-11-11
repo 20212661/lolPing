@@ -1,8 +1,14 @@
+import { isWheelItem, type WheelItem } from './actionCatalog';
 import { WHEEL_SLOTS, isPingId, type PingId } from './pings';
 
 /** A wheel is exactly WHEEL_SLOTS known pings, each at most once. */
 export function isValidWheel(v: unknown): v is PingId[] {
   return Array.isArray(v) && v.length === WHEEL_SLOTS && v.every(isPingId) && new Set(v).size === v.length;
+}
+
+/** A wheel that may hold actions too: exactly WHEEL_SLOTS pings or actions, each at most once. */
+export function isValidItemWheel(v: unknown): v is WheelItem[] {
+  return Array.isArray(v) && v.length === WHEEL_SLOTS && v.every(isWheelItem) && new Set(v).size === v.length;
 }
 
 /** Puts `id` in `slot`. If it is already elsewhere on the wheel, the two slots swap so nothing appears twice. */

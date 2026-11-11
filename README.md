@@ -74,6 +74,8 @@ On a Mac, use **⌥ Option** instead of Alt, **⌃ Control** instead of Ctrl for
 
 The wheel, from the top going clockwise: Danger, Push, On My Way, All In, Assist Me, Need Vision, Enemy Missing, Enemy Vision. You can rearrange it and add Bait, Vision Cleared or an upside-down Enemy Missing ("¿") in settings. The emote wheel has 8 slots too, and you pick its emotes in settings. Each imported image plays its own signature effect (a spin, a bounce, a heartbeat...), picked by right-clicking it in the settings window from a grid where every effect plays live on that image.
 
+A slice can also run an action instead of placing a ping: put one of the four actions — open an app, run a script, explain the clipboard with AI, search the clipboard — on the wheel in settings, and releasing there runs it. Actions run on your computer only and never reach a room.
+
 ## Settings
 
 <img src="docs/media/settings.png" width="760" alt="The lolPing settings window, with sections for trigger, toggle, pings and sound, wheel, emotes, room and app">
@@ -84,6 +86,7 @@ The wheel, from the top going clockwise: Danger, Push, On My Way, All In, Assist
 - **Enable / disable shortcut:** must include Ctrl, Alt or Win (⌃, ⌥ or ⌘ on a Mac).
 - **Pings and sound:** size, duration, volume, mute and the wheel's tick sound. **Keep my last ping on screen** leaves your newest ping up until your next one or until you pause lolPing, for example to mark where you stopped reading.
 - **Wheel:** adjust the size of both the ping and emote wheels, without changing placed pings or emotes. Drag any ping onto any slice, including Bait, Vision Cleared and the upside-down Enemy Missing, or onto the centre to make it the Alt + click ping. Click a ping to preview it. **Reset to default** brings back League's layout.
+- **Actions:** what the four wheel actions do. **Open app** opens a program, file or web address; **Run script** runs a command line in a hidden shell; **Explain with AI** sends the clipboard text to the chat API you configure (address, key, model) and shows the answer by the cursor; **Search clipboard** opens a search for the clipboard text. Put them on slices under **Wheel**. The AI action talks only to the API address you set.
 - **Emotes:** the emote key (Ctrl by default, or off), **Ctrl + click places an emote** (off by default), emote size, emote sound and the emote wheel, which you edit like the ping wheel. **Add image…**, or dropping a file on the list, adds your own images: PNG, JPG, GIF or WebP, up to 24. Animated ones play on your screen only. The speaker on one of your images gives it a sound (MP3, OGG or WAV, up to 1 MB and 5 seconds), which plays on your computer only.
 - **Room:** your name and tag colour, how friends' text appears (at the spot they pointed at, or scrolling across the top as 弹幕), the **text shortcut** (Alt + T by default) and the **room panel key** (Tab by default). The text shortcut and the panel key reach other apps except while you are in a room.
 - **Features:** turns off the parts you don't use: emotes, rooms, room text, votes and the room panel. A feature that is off has no keys, no settings section, sends nothing and ignores what friends send for it.
@@ -122,6 +125,26 @@ Join a room and everyone in it sees your pings on their own screen, at the same 
 - **Mute room**, muting one person, and an **Incoming ping, emote and text limit** (up to Unlimited, counted together) keep the spam under control. Pausing lolPing with the shortcut pauses all room content too.
 - A room holds up to 16 people. To remove someone, start a kick vote, or leave and create a new room.
 - **Privacy:** pings, emotes, text, votes, your emote images and names are end-to-end encrypted with a key made from the room code, and text and votes use no new network hosts. People on your network can see your local IP address. With internet connections on, public relays see your IP address, an anonymous room ID and when you send, but never your content, images or name. Turn **Allow internet connections** off to stay on your local network.
+
+## Custom Cordis actions
+
+Settings → Actions → Add plugin creates a named action. Enter the absolute path to a local `.cjs`, `.mjs` or `.js`
+file, the command it registers, and its JSON configuration. Then go to Wheel and drag its tile onto a slice.
+Hold the wheel key, drag to that slice and release to run it. Removing a plugin restores only its wheel slots to pings.
+
+Try [`tools/plugin-examples/hello.cjs`](tools/plugin-examples/hello.cjs): use command `hello` and configuration
+`{"message":"Hello from my plugin"}`. It shows that message beside the wheel. To try its `clipboard` command,
+add another binding to the same file, enable “Pass clipboard text to the plugin”, and copy some text first.
+See [`docs/plugins.md`](docs/plugins.md) for the API and lifecycle.
+
+Each custom action runs in a fresh Electron utility process. The default timeout is 15 seconds (configurable from
+1 to 120); timeout, settings changes and quitting terminate the process. A running action ignores repeat gestures,
+and at most four plugin processes run at once. Plugins are not background services. TypeScript plugins must be compiled
+to JavaScript first. The host uses the project's pinned `cordis` version, not the DeepSeek fork.
+
+Privacy: the example makes no network requests. Custom plugins can use files and the network with your account's
+permissions; process separation is not a security sandbox. Clipboard text is passed only when enabled for that binding.
+Plugin actions and their results are never sent to a room. This feature adds no fixed network host.
 
 ## Known limitations
 

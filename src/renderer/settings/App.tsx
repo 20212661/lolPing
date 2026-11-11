@@ -2,18 +2,20 @@ import { Dropdown, FluentProvider, Option, webDarkTheme, webLightTheme } from '@
 import {
   ArrowMove24Regular, ArrowSync24Regular, CursorClick24Regular, DataPie24Regular, Games24Regular, Info24Regular, Keyboard24Regular, MusicNote224Regular, Pin24Regular,
   Power24Regular, ResizeLarge24Regular, Rocket24Regular, Settings24Regular, Speaker224Regular, SpeakerMute24Regular,
-  Apps24Regular, Timer24Regular, Cursor24Regular, Emoji24Regular, LocalLanguage24Regular, PeopleCommunity24Regular,
+  Apps24Regular, Timer24Regular, Cursor24Regular, Emoji24Regular, LocalLanguage24Regular, PeopleCommunity24Regular, Flash24Regular,
 } from '@fluentui/react-icons';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { ACTIONS, actionIconUrl, type WheelItem } from '../../shared/actionCatalog';
 import { LANGUAGE_NAMES, LANGUAGE_PREFS, resolveLang, strings, type LanguagePref, type Strings } from '../../shared/i18n';
 import type { AppStatus } from '../../shared/ipc';
 import { featureOn, type FeatureId } from '../../shared/features';
 import { hotkeyParts } from '../../shared/keys';
-import { ALL_PINGS, DEFAULT_CLICK_PING, DEFAULT_WHEEL, textureUrl, type PingId } from '../../shared/pings';
+import { ALL_PINGS, DEFAULT_CLICK_PING, DEFAULT_WHEEL, isPingId, textureUrl, type PingId } from '../../shared/pings';
 import { triggerLabel, type Settings } from '../../shared/settings';
 import type { WheelPatch } from '../../shared/wheelLayout';
 import { api } from './api';
 import { AboutSection } from './components/AboutSection';
+import { ActionsSection } from './components/ActionsSection';
 import { EmoteSection } from './components/EmoteSection';
 import { FeaturesSection } from './components/FeaturesSection';
 import { KeyCapture } from './components/KeyCapture';
@@ -38,6 +40,7 @@ const SECTIONS: { id: string; label: (t: Strings) => string; icon: ReactNode; fe
   { id: 'toggle', label: (t) => t.navToggle, icon: <Keyboard24Regular /> },
   { id: 'pings', label: (t) => t.navPings, icon: <Speaker224Regular /> },
   { id: 'wheel', label: (t) => t.navWheel, icon: <DataPie24Regular /> },
+  { id: 'actions', label: (t) => t.navActions, icon: <Flash24Regular /> },
   { id: 'emotes', label: (t) => t.navEmotes, icon: <Emoji24Regular />, feature: 'emotes' },
   { id: 'room', label: (t) => t.navRoom, icon: <PeopleCommunity24Regular />, feature: 'rooms' },
   { id: 'features', label: (t) => t.navFeatures, icon: <Apps24Regular /> },
@@ -48,10 +51,10 @@ const SECTIONS: { id: string; label: (t: Strings) => string; icon: ReactNode; fe
 const NEW_PINGS = new Set<PingId>(['bait', 'visioncleared', 'missingflip']);
 
 /** The settings change for a ping wheel edit: only the fields it touches, since an undefined field would reset that setting. */
-function pingPatch(p: WheelPatch<PingId>): Partial<Settings> {
+function pingPatch(p: WheelPatch<WheelItem>): Partial<Settings> {
   const patch: Partial<Settings> = {};
   if (p.wheel) patch.wheel = p.wheel;
-  if (p.center) patch.clickPingId = p.center;
+  if (p.center && isPingId(p.center)) patch.clickPingId = p.center;
   return patch;
 }
 
@@ -102,6 +105,11 @@ function SettingsPage({ settings: s, status, update }: { settings: Settings; sta
   const pingPool: PoolItem<PingId>[] = ALL_PINGS.map((p) => ({
     id: p.id, icon: textureUrl(p.icon), name: t.pingNames[p.id], badge: NEW_PINGS.has(p.id) ? t.wheelNew : undefined,
   }));
+  const actionPool: PoolItem<WheelItem>[] = ACTIONS.map((a) => ({ id: a.id, icon: actionIconUrl(a.id), name: t.actionNames[a.id] }));
+  const customPool: PoolItem<WheelItem>[] = s.actions.custom.map((a) => ({
+    id: a.id, icon: actionIconUrl(a.id), name: a.name, badge: a.enabled ? undefined : t.pluginDisabled,
+  }));
+  const wheelPool: PoolItem<WheelItem>[] = [...pingPool, ...actionPool, ...customPool];
 
   useEffect(() => {
     const show = (id: string) => document.getElementById(id)?.scrollIntoView({ behavior: 'smooth' });
@@ -200,10 +208,15 @@ function SettingsPage({ settings: s, status, update }: { settings: Settings; sta
         <div className="section" id="wheel">{t.navWheel}</div>
         <SliderRow limit="wheelSizePx" icon={<ResizeLarge24Regular />} title={t.wheelSize} description={t.wheelSizeDesc}
           value={s.wheelSizePx} format={(v) => `${v} ${LENGTH_UNIT}`} onChange={(v) => void update({ wheelSizePx: v })} />
-        <WheelEditor wheel={s.wheel} center={s.clickPingId} centerOn={s.clickPing} trigger={trigger} pool={pingPool}
+        <WheelEditor wheel={s.wheel} center={s.clickPingId} centerOn={s.clickPing} trigger={trigger} pool={wheelPool}
           defaults={{ wheel: DEFAULT_WHEEL, center: DEFAULT_CLICK_PING }}
           labels={{ title: t.wheelTitle, desc: t.wheelDesc(trigger), poolTitle: t.allPings, poolDesc: t.allPingsDesc }}
-          onChange={(patch) => void update(pingPatch(patch))} onPreview={(id) => void api.previewPing(id)} />
+          canCenter={isPingId}
+          onChange={(patch) => void update(pingPatch(patch))}
+          onPreview={(id) => { if (isPingId(id)) void api.previewPing(id); }} />
+
+        <div className="section" id="actions">{t.navActions}</div>
+        <ActionsSection settings={s} update={update} />
 
         {featureOn(s, 'emotes') ? (
           <>

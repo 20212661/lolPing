@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { EmoteArt } from '../../src/shared/emotes';
-import { OVERLAY_EMOTED, OVERLAY_PINGED } from '../../src/shared/ipc';
+import { OVERLAY_ACTIONED, OVERLAY_EMOTED, OVERLAY_PINGED } from '../../src/shared/ipc';
 import { DEFAULT_SETTINGS, overlaySettings } from '../../src/shared/settings';
 
 type Rect = { x: number; y: number; width: number; height: number };
@@ -343,5 +343,39 @@ describe('OverlayManager z-order', () => {
     mac.handle({ type: 'wheelOpen', x: 100, y: 200, wheel: 'ping' });
     mac.previewPing('danger');
     expect(raised()).toEqual([[], []]);
+  });
+});
+
+describe('OverlayManager wheel actions', () => {
+  const sender = (i: number): unknown => h.windows[i].webContents;
+  const raised = (): string[][] => h.windows.map((w) => w.onTop.slice(1));
+
+  it('emits an action released on the display that reported it', () => {
+    const actioned = vi.fn();
+    mgr.on('actioned', actioned);
+    h.handlers.get(OVERLAY_ACTIONED)!({ sender: sender(1) }, { id: 'ai-explain', x: 30, y: 40 });
+    expect(actioned).toHaveBeenCalledOnce();
+    expect(actioned).toHaveBeenCalledWith({ id: 'ai-explain', displayId: 2, x: 30, y: 40 });
+    expect(sent(0)).toEqual([]);
+    expect(sent(1)).toEqual([]); // running it is not the overlay's business
+  });
+
+  it('ignores a malformed action report', () => {
+    const actioned = vi.fn();
+    mgr.on('actioned', actioned);
+    const report = h.handlers.get(OVERLAY_ACTIONED)!;
+    for (const raw of [null, 'x', {}, { id: 'nope', x: 1, y: 1 }, { id: 'open-app', x: '1', y: 1 }, 5]) {
+      report({ sender: sender(0) }, raw);
+    }
+    report({ sender: {} }, { id: 'open-app', x: 1, y: 1 }); // not one of our windows
+    expect(actioned).not.toHaveBeenCalled();
+  });
+
+  it('shows an action bubble on its own display, and lifts that overlay back on top', () => {
+    mgr.actionBubble(2, { x: 10, y: 20, state: 'running', title: 'Explain with AI', body: 'Working…' });
+    expect(sent(1)).toEqual([['action:bubble', { x: 10, y: 20, state: 'running', title: 'Explain with AI', body: 'Working…' }]]);
+    expect(sent(0)).toEqual([]);
+    expect(raised()[1]).toEqual(['screen-saver']);
+    expect(raised()[0]).toEqual([]);
   });
 });

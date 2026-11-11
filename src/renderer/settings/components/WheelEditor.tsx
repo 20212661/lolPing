@@ -45,6 +45,8 @@ interface Props<T extends string> {
   poolExtra?: ReactNode;
   /** Files dragged in from outside and dropped on the pool. Without it the pool takes no files. */
   onDropFiles?: (files: File[]) => void;
+  /** Which ids may be dropped on the centre; absent means all of them. */
+  canCenter?: (id: T) => boolean;
   /** Right-click on one of our emotes opens the effect picker. Absent for wheels of pings. */
   onFxPick?: (id: EmoteRef, fx: number | undefined) => void;
   /** Which ids may open that picker (our imported emotes). */
@@ -63,7 +65,7 @@ const activate = (fn: () => void) => (e: KeyboardEvent) => {
 };
 
 export function WheelEditor<T extends string>({
-  wheel, center, centerOn, trigger, pool, defaults, labels, poolExtra, onDropFiles, onFxPick, fxIds, fxFor, onChange, onPreview,
+  wheel, center, centerOn, trigger, pool, defaults, labels, poolExtra, onDropFiles, canCenter, onFxPick, fxIds, fxFor, onChange, onPreview,
 }: Props<T>) {
   const t = useText();
   const [picked, setPicked] = useState<WheelSource<T> | null>(null);
@@ -88,6 +90,11 @@ export function WheelEditor<T extends string>({
   }, []);
 
   const apply = (src: WheelSource<T>, target: WheelTarget) => {
+    // An id the centre can't hold (a wheel action) is just put back, like dropping it nowhere.
+    if (target === 'center' && canCenter && !canCenter(src.id)) {
+      setPicked(null);
+      return;
+    }
     const patch = dropPatch(wheel, center, src, target);
     if (patch) onChange(patch);
     setPicked(null);

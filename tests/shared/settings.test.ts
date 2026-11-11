@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { defaultActions } from '../../src/shared/actionCatalog';
 import { DEFAULT_CLICK_EMOTE, DEFAULT_EMOTE_WHEEL } from '../../src/shared/emoteCatalog';
 import { MOD } from '../../src/shared/keys';
 import { formatRoomCode, makeRoomCode } from '../../src/shared/roomCode';
@@ -616,5 +617,36 @@ describe('custom emote effects', () => {
     expect(s.customEmotes[0]).toMatchObject({ fx: 5 });
     expect(s.customEmotes[1].fx).toBeUndefined(); // 6 is out of range: the plain pop
     expect(s.customEmotes[2].fx).toBeUndefined();
+  });
+});
+
+describe('wheel actions in settings', () => {
+  it('keeps custom bindings and repairs only missing plugin slots', () => {
+    const wheel = ['plugin:hello', 'bait', ...DEFAULT_SETTINGS.wheel.slice(2)];
+    const configured = normalizeSettings({ wheel, actions: { custom: [{ id: 'plugin:hello', enabled: false }] } });
+    expect(configured.wheel).toEqual(wheel);
+    const removed = normalizeSettings({ ...configured, actions: { custom: [] } });
+    expect(removed.wheel.slice(1)).toEqual(wheel.slice(1));
+    expect(removed.wheel[0]).toBe('danger');
+    expect(new Set(removed.wheel).size).toBe(8);
+  });
+
+  it('gives an old settings file the default actions, keeping its wheel', () => {
+    const s = normalizeSettings({ wheel: ['bait', ...DEFAULT_SETTINGS.wheel.slice(1)] });
+    expect(s.actions).toEqual(defaultActions());
+    expect(s.wheel[0]).toBe('bait');
+  });
+
+  it('keeps a wheel that mixes pings and actions, and drops a broken one', () => {
+    const mixed = ['danger', 'open-app', 'push', 'omw', 'allin', 'assist', 'needvision', 'missing'];
+    expect(normalizeSettings({ wheel: mixed }).wheel).toEqual(mixed);
+    const dup = ['open-app', 'ai-explain', 'push', 'omw', 'allin', 'assist', 'needvision', 'open-app'];
+    expect(normalizeSettings({ wheel: dup }).wheel).toEqual(DEFAULT_SETTINGS.wheel);
+  });
+
+  it('normalizes action settings from anything, like the rest of the file', () => {
+    const s = normalizeSettings({ actions: { openApp: { target: ' C:/a.exe ' }, runScript: 'nope' } });
+    expect(s.actions.openApp.target).toBe('C:/a.exe');
+    expect(s.actions.runScript.command).toBe('');
   });
 });

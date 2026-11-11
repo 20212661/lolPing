@@ -178,7 +178,7 @@ All coordinates are **physical screen pixels**.
   - Restarts the helper with backoff (0.5 s, 1 s, 2 s). After 3 crashes within 60 s, it stops, sets the tray to a warning state and shows a toast.
 - **OverlayManager:**
   - One `BrowserWindow` per display: `transparent`, `frame:false`, `focusable:false`, `skipTaskbar`, `alwaysOnTop` at level `screen-saver`, `setIgnoreMouseEvents(true)`, created with `showInactive()`.
-  - On Windows the level is set again each time an overlay gets something new to draw (`wheel:open`, `ping:spawn`, `emote:spawn`, `toast:show`), never on moves. Windows 10 users saw the overlay end up behind normal windows after a while, and only a restart fixed it. Setting the level again calls `SetWindowPos(HWND_TOPMOST)` without activating, which puts the overlay back above every window, other topmost ones included. macOS is unchanged: its panel stays on top.
+  - On Windows the level is set again each time an overlay gets something new to draw (`wheel:open`, `ping:spawn`, `emote:spawn`, `toast:show`, `text:spawn`, `action:bubble`), never on moves. Windows 10 users saw the overlay end up behind normal windows after a while, and only a restart fixed it. Setting the level again calls `SetWindowPos(HWND_TOPMOST)` without activating, which puts the overlay back above every window, other topmost ones included. macOS is unchanged: its panel stays on top.
   - The windows cover each display's `bounds`, except that on Windows they stop one DIP short of the bottom edge. Explorer takes a shown window that covers a whole display for a full-screen app: it drops the taskbar behind it and won't slide an auto-hidden one up (`SHQueryUserNotificationState` reports `QUNS_BUSY`). Any smaller window doesn't count. The window still starts at the display's corner, so overlay coordinates don't change. They are rebuilt on `display-added`, `display-removed` and `display-metrics-changed`.
   - Each event is routed to the overlay whose display contains the press point. A wheel near a screen edge may be clipped; it is not clamped, the same as in League.
 - **Coordinates:** `screen.screenToDipPoint({x,y})` converts physical pixels to DIP, then the display's DIP origin is subtracted to get overlay-local CSS pixels. Wheel moves are converted relative to the *wheel's* display, even when the cursor crosses onto another monitor.
@@ -428,3 +428,35 @@ Each larger piece can be switched off. This keeps lolPing small for people who w
 - **What off means:** `emotes`: no emote key, no Emotes section, incoming emotes dropped. `rooms`: the Room section and the tray's room items are hidden, and the current room is left at once. `roomText`: no text shortcut, nothing sent or shown, `nf` lists `text`; the panel's alive click does nothing too. `roomVotes`: see §14. `roomPanel`: the panel key is never captured.
 - **A feature is a unit:** a main-process module with its decisions in a pure module beside it (`roomText.ts`, `roomVotes.ts`, `panelWindows.ts`). This is a convention, not a plugin system: there is no loader and no registry. Existing emote and room code only got the switch at the edges above.
 - **Features do not depend on League's content.** Pings, emotes and their sounds are content (`assets/`, `pings.ts`, `emotes.ts`). Rooms, text, votes and the panel are features. Their League art in `assets/ui` is decoration: every button, label and timer is our own markup, so the widgets still work with the images replaced or missing.
+
+## 16. Wheel actions
+
+A wheel slice can hold an action instead of a ping: releasing on it runs the action on this machine, and the room never hears of it. The helper and its gesture are untouched — it is the same wheel, and a slot's content is just a different string.
+
+- **Catalog and settings (`src/shared/actionCatalog.ts`):** four built-in actions. `open-app` opens a program, file or web address; `run-script` runs a command line in a hidden shell (cmd on Windows, /bin/sh elsewhere); `ai-explain` sends the clipboard text to an OpenAI-compatible chat API and returns the answer; `clipboard-search` opens a browser search for the clipboard text. `wheel` widens from ping ids to wheel items (`PingId | ActionId`; still exactly 8 distinct, top then clockwise), and `actions` holds each action's config, normalized field by field like the rest of the settings file, so an old file gains the defaults and keeps its wheel. The centre (trigger + click) stays a ping: the wheel editor ignores an action dropped on it, and the click path is unchanged.
+- **Cordis host (`src/main/commandHost.ts`, `commandService.ts`, `action*.ts`):** the actions are [Cordis](https://cordis.workers.dev) plugins on one `Context`. `CommandService`, a Cordis `Service` published as `commands`, is the registry; each action registers its handler with `ctx.effect`, so disposing the host — a settings change or quit — unregisters the handlers and aborts requests in flight. The OS abilities (open, clipboard, spawn, fetch) are injected as `CommandHostDeps`, so the same plugins run in tests against fakes. The host is reloaded whole when `actions` changes, compared by value: normalizing rebuilds the object on every save.
+- **Flow:** the overlay releases on an action slice, plays the generic ping sound, and reports `overlay:actioned` `{id, x, y}` — never `overlay:pinged`, so nothing is shared and no kept ping drops. `OverlayManager` validates the report and emits `actioned`; main runs `commands.execute(id)` and answers on the display it came from with `action:bubble`: a `running` bubble first for the one `result` action (ai-explain), then `done` with the answer or `error` with an i18n line (`actionErrors`; raw details go to the log). An instant action that succeeds shows no bubble — the thing it opened is the feedback.
+- **Bubble (`src/renderer/overlay/actionBubble.ts`):** a card by the cursor, below-right of the point and flipped back inside the viewport (`placeBubble`, pure and tested), one at a time, fading 8 s after it settles. The overlay is click-through, so the bubble can't be clicked; and the answer never touches the clipboard, because the clipboard text is the question.
+- **Icons:** every action draws its slice icon as an inline SVG data URI (`actionIconUrl`), shared by the wheel, the settings pool and the tests. Nothing loads from disk, so no new assets ship.
+- **Not in the helper, not on the wire:** the gesture, the room protocol and the helper's config are unchanged, so an older or newer peer needs nothing, and PROTOCOL_VERSION stays. Security is the settings file's: run-script runs whatever command is configured, which is why actions never arrive from anywhere but this machine's own settings.
+
+### 16.1 Local custom plugins
+
+`actions.custom` holds up to 32 named bindings with stable `plugin:<id>` identifiers, entry paths, command names,
+JSON configuration, enabled and clipboard flags, and a 1–120 second timeout (15 seconds by default). Old settings
+gain an empty list. Removing a binding repairs only wheel slots that referenced it; disabled bindings stay assigned.
+The settings action pool includes those bindings alongside the four built-ins. The main process resolves plugin ids
+against its current settings before executing anything, so the overlay never chooses a file or passes code.
+
+`PluginRunner` starts `pluginWorker.js` with Electron `utilityProcess` for each custom invocation. The worker owns a
+fresh Cordis Context and CommandService, imports the configured local JavaScript module, awaits loading, executes
+the configured command, disposes the context and sends a bounded result. Plugin code never runs in the main process
+or native input helper. A parent-side deadline terminates stuck module loading, execution or cleanup. Settings
+changes and quitting abort pending runs and terminate workers. This is process separation, not a security sandbox;
+trusted plugins retain the user's Node filesystem and network permissions. No fixed network host is added.
+
+The existing `overlay:actioned` IPC and `action:bubble` feedback carry the invocation and result. The main process
+suppresses duplicate gestures while that action runs, and the runner caps concurrent workers at four. Per-display
+invocation numbers keep an old completion from replacing a newer bubble. Host reloads are serialized and obsolete
+configurations are skipped. An instant action clears a superseded bubble through `action:clear`, so a cancelled
+progress message cannot stay on screen forever. The API, example and limitations are documented in `docs/plugins.md`.

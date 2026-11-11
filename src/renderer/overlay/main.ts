@@ -1,4 +1,6 @@
 import { EMOTE_CATALOG } from '../../shared/emoteCatalog';
+import { isActionId } from '../../shared/actionCatalog';
+import { showBubble } from './actionBubble';
 import {
   CUSTOM_EMOTE_URL, allEmoteAssetFiles, catalogEmote, customAnimUrl, customHash, customSoundUrl, customStillUrl, emoteSoundUrl,
   isBundledEmote,
@@ -17,11 +19,12 @@ import { SoundBank } from './soundBank';
 import { showToast } from './toast';
 import { TextStage } from './textFx';
 import { Wheel } from './wheel';
-import { centerIcons, emoteItem, pingItem } from './wheelItems';
+import { centerIcons, emoteItem, wheelItemsFor } from './wheelItems';
 
 const pingLayer = document.getElementById('pings') as HTMLElement;
 const toastLayer = document.getElementById('toasts') as HTMLElement;
 const textLayer = document.getElementById('texts') as HTMLElement;
+const bubbleLayer = document.getElementById('bubbles') as HTMLElement;
 const pingSvg = document.getElementById('wheel') as unknown as SVGSVGElement;
 
 // The emote wheel is a second copy of the ping wheel's svg, and its emotes get a layer of their own above the pings.
@@ -70,7 +73,7 @@ function applySettings(s: OverlaySettings): void {
   if (!s.keepLastPing) dropKeptPing();
   pingWheel.setSize(s.wheelSizePx);
   emoteWheel.setSize(s.wheelSizePx);
-  pingWheel.setItems(pingsFor(s.wheel).map(pingItem));
+  pingWheel.setItems(wheelItemsFor(s.wheel));
   emoteWheel.setItems(s.emoteWheel.map((ref) => emoteItem(ref, s.customEmotes)));
   const { ping, emote } = centerIcons(s);
   pingWheel.setCenterIcon(ping);
@@ -103,6 +106,10 @@ window.overlay.on('wheel:release', (p) => {
   if (p.wheel === 'emote') {
     emote('self', localArt(chosen.key), chosen.x, chosen.y);
     window.overlay.reportEmote(chosen.key, chosen.x, chosen.y);
+  } else if (isActionId(chosen.key)) {
+    // A released action runs in the main process; its bubble (if any) comes back to this overlay.
+    sounds.play('Base', volume());
+    window.overlay.reportAction(chosen.key, chosen.x, chosen.y);
   } else {
     const def = pingById(chosen.key) ?? fallbackPing;
     ping(def, chosen.x, chosen.y, undefined, settings.keepLastPing);
@@ -119,6 +126,8 @@ window.overlay.on('emote:spawn', (p) => emote(p.owner, p.art, p.x, p.y, p.tag));
 window.overlay.on('emote:clear', (p) => stage.clear(p.owner));
 window.overlay.on('toast:show', (t) => showToast(toastLayer, t.title, t.body));
 window.overlay.on('text:spawn', (t) => texts.spawn(t));
+window.overlay.on('action:bubble', (b) => showBubble(bubbleLayer, b));
+window.overlay.on('action:clear', () => bubbleLayer.replaceChildren());
 
 /** Resolves with `label` when the image at `url` doesn't load. */
 const probe = (url: string, label: string): Promise<string | null> =>

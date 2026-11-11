@@ -1,3 +1,4 @@
+import { defaultActions, isPluginActionId, normalizeActions, type ActionsSettings, type WheelItem } from './actionCatalog';
 import { DEFAULT_CLICK_EMOTE, DEFAULT_EMOTE_WHEEL } from './emoteCatalog';
 import {
   CUSTOM_NAME_MAX, MAX_CUSTOM_EMOTES, customHash, isCustomRef, isEmoteFx, normalizeClickEmote, normalizeEmoteWheel,
@@ -13,7 +14,7 @@ import { isTagColor, isTagRgb, readableTagRgb, type TagRgb } from './roomColors'
 import { parseRoomCode } from './roomCode';
 import { sanitizeName } from './roomProtocol';
 import { isVersion } from './update';
-import { isValidWheel } from './wheelLayout';
+import { isValidItemWheel } from './wheelLayout';
 
 export type NamedTrigger = 'alt' | 'ctrl' | 'shift' | 'win' | 'capslock' | 'mouse4' | 'mouse5';
 export type TriggerKey = NamedTrigger | { vk: number };
@@ -39,8 +40,10 @@ export interface Settings {
   gameCheck: boolean;
   /** The displayed SVG size, shared by the ping and emote wheels. */
   wheelSizePx: number;
-  /** The wheel's slices, top (N) then clockwise. */
-  wheel: PingId[];
+  /** The wheel's slices, top (N) then clockwise: pings, or actions that run on release. */
+  wheel: WheelItem[];
+  /** What each wheel action does when it runs; see actionCatalog.ts. */
+  actions: ActionsSettings;
   toggleHotkey: Hotkey;
   /** Opens the custom text message dialog. */
   textHotkey: Hotkey;
@@ -107,6 +110,7 @@ export const DEFAULT_SETTINGS: Settings = {
   clickPingId: DEFAULT_CLICK_PING,
   wheelSizePx: WHEEL.size,
   wheel: [...DEFAULT_WHEEL],
+  actions: defaultActions(),
   toggleHotkey: { mods: MOD.ctrl | MOD.alt, vk: 0x50 },
   textHotkey: { mods: MOD.alt, vk: 0x54 },
   panelKey: 0x09,
@@ -300,6 +304,14 @@ export function normalizeSettings(raw: unknown, platform: Platform = 'win', iden
   const emote = emoteKey(r.emoteTrigger, platform);
   const emoteVk = triggerVk(triggersClash(pingTrigger, emote, toggleHotkey) ? 'off' : emote);
   const custom = customEmotes(r.customEmotes);
+  const actions = normalizeActions(r.actions);
+  const wheel = isValidItemWheel(r.wheel) ? [...r.wheel] : [...DEFAULT_WHEEL];
+  for (let i = 0; i < wheel.length; i++) {
+    const id = wheel[i];
+    if (isPluginActionId(id) && !actions.custom.some((a) => a.id === id)) {
+      wheel[i] = DEFAULT_WHEEL.find((ping) => !wheel.includes(ping)) ?? DEFAULT_CLICK_PING;
+    }
+  }
   return {
     version: 1,
     enabledOnStart: bool(r.enabledOnStart, 'enabledOnStart'),
@@ -309,7 +321,8 @@ export function normalizeSettings(raw: unknown, platform: Platform = 'win', iden
     gameCheck: bool(r.gameCheck, 'gameCheck'),
     wheelSizePx: num(r.wheelSizePx, 'wheelSizePx'),
     clickPingId: isPingId(r.clickPingId) ? r.clickPingId : DEFAULT_CLICK_PING,
-    wheel: isValidWheel(r.wheel) ? [...r.wheel] : [...DEFAULT_WHEEL],
+    wheel,
+    actions,
     toggleHotkey,
     textHotkey,
     panelKey: panelKey(r.panelKey, [triggerVk(pingTrigger), emoteVk, toggleHotkey.vk, textHotkey.vk]),

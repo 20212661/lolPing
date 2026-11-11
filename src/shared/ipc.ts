@@ -41,13 +41,16 @@ export interface OverlayEvents {
   'toast:show': { title: string; body: string };
   /** `owner` is 'self' or a room member: each owner has at most 3 lines on screen. */
   'text:spawn': Point & { text: string; owner: string; style: RoomTextStyle; tag?: PingTag };
+  /** A wheel action's progress, on the display the wheel was released on: 'running' until the answer replaces it. */
+  'action:bubble': Point & { state: 'running' | 'done' | 'error'; title: string; body?: string };
+  'action:clear': null;
 }
 
 export type OverlayChannel = keyof OverlayEvents;
 
 export const OVERLAY_CHANNELS: readonly OverlayChannel[] = [
   'overlay:settings', 'wheel:open', 'wheel:move', 'wheel:release', 'wheel:cancel', 'ping:spawn', 'ping:unkeep', 'emote:spawn', 'emote:clear',
-  'toast:show', 'text:spawn',
+  'toast:show', 'text:spawn', 'action:bubble', 'action:clear',
 ];
 
 export const TEXT_CH = { submit: 'text:submit', cancel: 'text:cancel', strings: 'text:strings' } as const;
@@ -135,6 +138,8 @@ export const OVERLAY_ASSETS = 'overlay:assets';
 export const OVERLAY_PINGED = 'overlay:pinged';
 /** overlay renderer → main: {ref, x, y} of an emote the wheel just placed, so it can be shared with the room. */
 export const OVERLAY_EMOTED = 'overlay:emoted';
+/** overlay renderer → main: {id, x, y} of an action the wheel just released on. Runs it; never shared with the room. */
+export const OVERLAY_ACTIONED = 'overlay:actioned';
 
 export interface AppStatus {
   enabled: boolean;

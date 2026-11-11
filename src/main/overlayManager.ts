@@ -1,8 +1,9 @@
 import { BrowserWindow, ipcMain, screen, type Display, type Rectangle, type WebContents } from 'electron';
 import { EventEmitter } from 'node:events';
+import { isActionId, type ActionId } from '../shared/actionCatalog';
 import { isEmoteRefShape, type EmoteArt, type EmoteRef } from '../shared/emotes';
 import {
-  OVERLAY_ASSETS, OVERLAY_EMOTED, OVERLAY_PINGED, type OverlayChannel, type OverlayEvents, type PingTag,
+  OVERLAY_ACTIONED, OVERLAY_ASSETS, OVERLAY_EMOTED, OVERLAY_PINGED, type OverlayChannel, type OverlayEvents, type PingTag,
 } from '../shared/ipc';
 import { isPingId, type PingId } from '../shared/pings';
 import type { HelperEvent, WheelKind } from '../shared/protocol';
@@ -27,6 +28,14 @@ export interface SharedEmote {
   y: number;
 }
 
+/** A wheel action the user just released on, in overlay-local CSS px: it runs here, and the room never hears of it. */
+export interface SharedAction {
+  id: ActionId;
+  displayId: number;
+  x: number;
+  y: number;
+}
+
 const isNum = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
 
 /**
@@ -37,12 +46,14 @@ export const overlayBounds = (d: Display): Rectangle =>
   IS_MAC || IS_LINUX ? d.bounds : { ...d.bounds, height: d.bounds.height - 1 };
 
 /** Messages that put something new on an overlay. */
-const RAISING_CHANNELS: ReadonlySet<OverlayChannel> = new Set<OverlayChannel>(['wheel:open', 'ping:spawn', 'emote:spawn', 'toast:show', 'text:spawn']);
+const RAISING_CHANNELS: ReadonlySet<OverlayChannel> = new Set<OverlayChannel>([
+  'wheel:open', 'ping:spawn', 'emote:spawn', 'toast:show', 'text:spawn', 'action:bubble',
+]);
 
 /**
  * One transparent, click-through, always-on-top window per display.
  * Emits 'shared' (SharedPing) for every wheel or trigger+click ping and 'sharedEmote' (SharedEmote) for every wheel or
- * trigger+click emote, never for settings previews.
+ * trigger+click emote, never for settings previews, and 'actioned' (SharedAction) for every wheel action released on.
  */
 export class OverlayManager extends EventEmitter {
   readonly missingAssets = new Set<string>();
@@ -78,6 +89,13 @@ export class OverlayManager extends EventEmitter {
       this.emit('sharedEmote', { ref: p.ref, displayId, x: p.x, y: p.y } satisfies SharedEmote);
       // The wheel's own overlay already shows it. Another display may still hold an earlier one of ours.
       this.clearElsewhere(displayId, 'self');
+    });
+    ipcMain.on(OVERLAY_ACTIONED, (event, raw: unknown) => {
+      const p = raw as { id?: unknown; x?: unknown; y?: unknown } | null;
+      if (!p || !isActionId(p.id) || !isNum(p.x) || !isNum(p.y)) return;
+      const displayId = this.displayOf(event.sender);
+      if (displayId === undefined) return;
+      this.emit('actioned', { id: p.id, displayId, x: p.x, y: p.y } satisfies SharedAction);
     });
     this.rebuild();
     screen.on('display-added', () => this.rebuild());
@@ -163,6 +181,16 @@ export class OverlayManager extends EventEmitter {
   spawnText(p: { displayId: number; x: number; y: number; text: string; owner: string; style: RoomTextStyle; tag?: PingTag }): void {
     const { displayId, ...line } = p;
     this.send(displayId, 'text:spawn', line);
+  }
+
+  /** An action's progress or answer, on the display the wheel was released on (overlay-local CSS px). */
+  actionBubble(displayId: number, payload: OverlayEvents['action:bubble']): void {
+    this.send(displayId, 'action:bubble', payload);
+  }
+
+  /** An instant action superseded a previous result without needing its own bubble. */
+  clearActionBubble(displayId: number): void {
+    this.send(displayId, 'action:clear', null);
   }
 
   /** This machine's displays with their room numbers (#1 = primary). */

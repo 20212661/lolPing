@@ -1,8 +1,10 @@
-import { app, clipboard, dialog, Menu, powerMonitor, screen, shell, systemPreferences } from 'electron';
+import { app, clipboard, dialog, Menu, powerMonitor, screen, shell, systemPreferences, utilityProcess } from 'electron';
+import { spawn } from 'node:child_process';
 import { randomBytes, randomInt } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { userInfo } from 'node:os';
 import { join } from 'node:path';
+import { actionById, isPluginActionId } from '../shared/actionCatalog';
 import { resolveLang, strings, type Strings } from '../shared/i18n';
 import { SETTINGS_CH, type About, type AppStatus, type PanelAction, type PanelState } from '../shared/ipc';
 import { announcedEmoteHashes } from '../shared/emotes';
@@ -17,6 +19,9 @@ import { overlaySettings, soundLevel, type Settings } from '../shared/settings';
 import { parseTextInput } from '../shared/textCommands';
 import { updateErrorText, type UpdateState } from '../shared/update';
 import { registerAppScheme, serveAppScheme } from './appProtocol';
+import { CommandHost } from './commandHost';
+import { ActionRuns } from './actionRuns';
+import { PluginRunner } from './pluginRunner';
 import { resolveTarget, toShared } from './displayNumbers';
 import { EmoteCache } from './emoteCache';
 import { EmoteLibrary, resolveEmoteArt } from './emoteLibrary';
@@ -26,7 +31,7 @@ import { InputBridge } from './inputBridge';
 import { LanTransport } from './lanTransport';
 import { RELAYS } from './relays';
 import { RelayTransport } from './relayTransport';
-import { OverlayManager, type SharedEmote, type SharedPing } from './overlayManager';
+import { OverlayManager, type SharedAction, type SharedEmote, type SharedPing } from './overlayManager';
 import { assetPath, buildResourcePath, helperExePath, IS_LINUX, IS_MAC, PLATFORM, settingsDir } from './paths';
 import { deriveRoomKeys } from './roomCrypto';
 import { RoomHistory } from './roomHistory';
@@ -123,6 +128,62 @@ function start(): void {
   );
   overlays.start();
   const bridge = new InputBridge({ command: helperExePath() });
+
+  // Wheel actions: the four built-ins run in a Cordis plugin host (commandHost.ts). Reloaded when their settings change.
+  const plugins = new PluginRunner(() => utilityProcess.fork(join(__dirname, 'pluginWorker.js'), [], {
+    stdio: 'ignore', serviceName: 'lolPing plugin',
+  }));
+  const commands = new CommandHost({
+    runPlugin: (action, env) => plugins.execute(action, env),
+    platform: PLATFORM,
+    readClipboard: () => clipboard.readText().catch(() => ''),
+    openPath: (path) => shell.openPath(path),
+    openExternal: (url) => shell.openExternal(url),
+    spawnDetached: (file, args) => {
+      try {
+        const child = spawn(file, args, { detached: true, stdio: 'ignore', windowsHide: true });
+        child.unref();
+        // A failure that only surfaces on the child's 'error' event (a missing program) can no longer reach the caller.
+        child.on('error', (err) => console.warn('[actions]', err.message));
+        return { ok: true };
+      } catch (err) {
+        return { ok: false, error: String(err) };
+      }
+    },
+    fetchImpl: fetch,
+  });
+  const configureActions = (): void => {
+    void commands.applyConfig(settings.actions).catch((err: unknown) => console.warn('[actions]', err));
+  };
+  configureActions();
+  const actionRuns = new ActionRuns();
+  overlays.on('actioned', (a: SharedAction) => {
+    const def = actionById(a.id);
+    const custom = settings.actions.custom.find((item) => item.id === a.id);
+    if (!def && !custom) return;
+    const t = text();
+    const title = isPluginActionId(a.id) ? custom?.name ?? a.id : t.actionNames[a.id];
+    const at = { x: a.x, y: a.y };
+    const run = actionRuns.start(a.id, a.displayId);
+    if (!run) return;
+    if (custom || def?.feedback === 'result') {
+      overlays.actionBubble(a.displayId, { ...at, state: 'running', title, body: t.actionBubbleRunning });
+    } else {
+      overlays.clearActionBubble(a.displayId);
+    }
+    void commands.execute(a.id, { ...at, displayId: a.displayId }).then((r) => {
+      const current = actionRuns.finish(run);
+      if (quitting || !current) return;
+      if (r.ok) {
+        // An instant action that ran shows nothing: what it opened is the feedback. A result action answers in a bubble.
+        if (r.detail || custom) overlays.actionBubble(a.displayId, { ...at, state: 'done', title, body: r.detail ?? t.actionDone });
+      } else {
+        if (r.detail) console.warn(`[actions] ${a.id}: ${r.detail}`);
+        const body = r.detail === 'aborted' ? t.actionCancelled : t.actionErrors[r.error];
+        overlays.actionBubble(a.displayId, { ...at, state: 'error', title, body });
+      }
+    });
+  });
 
   // Updates: only in an installed build, or in a development build pointed at a test server with LOLPING_UPDATE_TEST_URL.
   const testUrl = process.env.LOLPING_UPDATE_TEST_URL || undefined;
@@ -582,6 +643,8 @@ function start(): void {
       tray.setRoomsShown(featureOn(s, 'rooms'));
     }
     if (s.autoUpdateCheck !== previous.autoUpdateCheck) updater?.setAutoCheck(s.autoUpdateCheck);
+    // Normalising rebuilds the actions object on every save, so compare what's inside, not where it lives.
+    if (JSON.stringify(s.actions) !== JSON.stringify(previous.actions)) configureActions();
     if (s.roomMuted !== previous.roomMuted) {
       syncRoomFlags();
       pushRoom();
@@ -677,6 +740,6 @@ function start(): void {
     tray.destroy();
     panels.destroy();
     overlays.destroy();
-    void Promise.allSettled([bridge.stop(), store.flush(), lan.whenClosed(), relay.whenClosed()]).then(() => app.exit(0));
+    void Promise.allSettled([bridge.stop(), commands.unload(), store.flush(), lan.whenClosed(), relay.whenClosed()]).then(() => app.exit(0));
   });
 }
