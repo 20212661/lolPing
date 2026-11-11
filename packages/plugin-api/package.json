@@ -1,0 +1,9 @@
+{
+  "name": "@lolping/api",
+  "version": "1.0.0",
+  "description": "lolPing plugin contract: manifest, plugin API, host protocol, PopClip adapter",
+  "type": "module",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "files": ["src", "examples", "plugin.schema.json", "README.md"]
+}

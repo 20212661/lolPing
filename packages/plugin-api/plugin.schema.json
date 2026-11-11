@@ -1,0 +1,412 @@
+{
+  "$ref": "#/definitions/PluginManifest",
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "definitions": {
+    "CommandContribution": {
+      "additionalProperties": false,
+      "properties": {
+        "color": {
+          "description": "轮盘扇区/图标的强调色。",
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "feedback": {
+          "description": "'instant'：只在失败时出气泡（打开程序、按键类）。 'result'：在光标处出结果气泡（解释、翻译类）。 与现有 ActionFeedback 同义。",
+          "enum": [
+            "instant",
+            "result"
+          ],
+          "type": "string"
+        },
+        "icon": {
+          "description": "插件根目录下的相对路径，或 `text:Ab`（1–2 个字符的文字图标，同 PopClip）。",
+          "type": "string"
+        },
+        "id": {
+          "description": "插件内唯一，见 ID_PATTERN。全名 `<pluginId>.<id>` 写入轮盘绑定。",
+          "type": "string"
+        },
+        "requires": {
+          "items": {
+            "$ref": "#/definitions/Requirement"
+          },
+          "type": "array"
+        },
+        "run": {
+          "$ref": "#/definitions/CommandRun"
+        },
+        "timeoutMs": {
+          "description": "毫秒，默认 15000，范围 1000–120000。包含启动、取选区、执行与清理。",
+          "type": "number"
+        },
+        "title": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "title",
+        "run"
+      ],
+      "type": "object"
+    },
+    "CommandRun": {
+      "anyOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "cleanText": {
+              "type": "boolean"
+            },
+            "kind": {
+              "const": "url",
+              "type": "string"
+            },
+            "url": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "url"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "delayMs": {
+              "type": "number"
+            },
+            "keys": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "kind": {
+              "const": "keys",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "keys"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "args": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "kind": {
+              "const": "open",
+              "type": "string"
+            },
+            "target": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "target"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "handler": {
+              "type": "string"
+            },
+            "kind": {
+              "const": "js",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "args": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "file": {
+              "description": "可执行文件，相对插件根目录或在 PATH 中。",
+              "type": "string"
+            },
+            "kind": {
+              "const": "exec",
+              "type": "string"
+            },
+            "protocol": {
+              "description": "'stdio-json'：按 protocol.ts 的 ExecRequest / ExecResponse 用 stdin/stdout 各一行 JSON 交互，可流式。 'plain'：选中文本经 stdin 传入（另设环境变量 LOLPING_TEXT），stdout 作为结果文本。",
+              "enum": [
+                "stdio-json",
+                "plain"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "file",
+            "protocol"
+          ],
+          "type": "object"
+        }
+      ],
+      "description": "命令怎么执行。前三种是纯声明式：宿主直接执行，零进程开销。 文本占位符：{text} 原文、{text:url} URL 编码、{config.<key>} 配置值。"
+    },
+    "ConfigProperty": {
+      "anyOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "default": {
+              "type": "string"
+            },
+            "description": {
+              "type": "string"
+            },
+            "enum": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "multiline": {
+              "type": "boolean"
+            },
+            "title": {
+              "type": "string"
+            },
+            "type": {
+              "const": "string",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "title"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "description": {
+              "type": "string"
+            },
+            "title": {
+              "type": "string"
+            },
+            "type": {
+              "const": "secret",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "title"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "default": {
+              "type": "number"
+            },
+            "description": {
+              "type": "string"
+            },
+            "maximum": {
+              "type": "number"
+            },
+            "minimum": {
+              "type": "number"
+            },
+            "title": {
+              "type": "string"
+            },
+            "type": {
+              "const": "number",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "title"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "default": {
+              "type": "boolean"
+            },
+            "description": {
+              "type": "string"
+            },
+            "title": {
+              "type": "string"
+            },
+            "type": {
+              "const": "boolean",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "title"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "Permission": {
+      "description": "能力清单。只覆盖「插件经由宿主做的事」；插件代码本身仍是可信的本地 Node 程序， 能直接用 fs / net —— 这里不是沙箱，而是让用户看清插件要做什么、并让宿主 API 有据可依。",
+      "enum": [
+        "selection",
+        "clipboard.read",
+        "clipboard.write",
+        "paste",
+        "keys",
+        "open",
+        "shell",
+        "network"
+      ],
+      "type": "string"
+    },
+    "PluginManifest": {
+      "additionalProperties": false,
+      "properties": {
+        "$schema": {
+          "description": "JSON Schema 路径，仅供编辑器补全，宿主忽略。",
+          "type": "string"
+        },
+        "author": {
+          "type": "string"
+        },
+        "configuration": {
+          "additionalProperties": {
+            "$ref": "#/definitions/ConfigProperty"
+          },
+          "description": "用户可编辑的配置项；设置界面按此自动生成表单。",
+          "type": "object"
+        },
+        "contributes": {
+          "additionalProperties": false,
+          "properties": {
+            "commands": {
+              "items": {
+                "$ref": "#/definitions/CommandContribution"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "commands"
+          ],
+          "type": "object"
+        },
+        "description": {
+          "type": "string"
+        },
+        "engines": {
+          "additionalProperties": false,
+          "properties": {
+            "lolping": {
+              "description": "例：\"^1.0.0\"。不满足时宿主拒绝加载并在设置里提示。",
+              "type": "string"
+            }
+          },
+          "required": [
+            "lolping"
+          ],
+          "type": "object"
+        },
+        "icon": {
+          "description": "插件根目录下的相对路径；svg/png。命令未指定图标时用它。",
+          "type": "string"
+        },
+        "id": {
+          "description": "全局唯一，见 ID_PATTERN。也是命令全名的前缀：`<id>.<commandId>`。",
+          "type": "string"
+        },
+        "isolated": {
+          "description": "true：沿用现在的「每次触发一个一次性进程」模式（强隔离、无状态、慢）。 false/缺省：加载进共享的常驻插件宿主（懒启动、空闲回收）。",
+          "type": "boolean"
+        },
+        "main": {
+          "description": "JS 入口（相对插件根目录，.js/.mjs/.cjs）。导出 activate(ctx)，可选 deactivate()。 有任一 run.kind === 'js' 的命令时必填。",
+          "type": "string"
+        },
+        "name": {
+          "description": "显示名，≤ 64 字符。",
+          "type": "string"
+        },
+        "origin": {
+          "additionalProperties": false,
+          "description": "由适配器生成时记录来源，例如从 PopClip 扩展转换而来。宿主仅用于展示。",
+          "properties": {
+            "kind": {
+              "const": "popclip",
+              "type": "string"
+            },
+            "source": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        "permissions": {
+          "description": "需要的能力。未声明的能力在运行时调用会被拒绝（返回 error: 'permission'）。",
+          "items": {
+            "$ref": "#/definitions/Permission"
+          },
+          "type": "array"
+        },
+        "version": {
+          "description": "semver。",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "version",
+        "engines",
+        "contributes"
+      ],
+      "type": "object"
+    },
+    "Requirement": {
+      "description": "命令运行前宿主要准备好的输入。不满足时宿主直接给出本地化错误，不启动插件。",
+      "enum": [
+        "text",
+        "url"
+      ],
+      "type": "string"
+    }
+  }
+}

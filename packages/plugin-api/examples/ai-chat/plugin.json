@@ -1,0 +1,26 @@
+{
+  "$schema": "../../plugin.schema.json",
+  "id": "ai-chat",
+  "name": "AI 划词",
+  "version": "1.0.0",
+  "description": "OpenAI 兼容接口（DeepSeek / GPT 等）的解释、翻译、润色，流式显示结果。",
+  "engines": { "lolping": "^1.0.0" },
+  "main": "dist/index.js",
+  "permissions": ["selection", "paste", "clipboard.write", "network"],
+  "configuration": {
+    "baseUrl": { "type": "string", "title": "接口地址", "default": "https://api.deepseek.com/v1" },
+    "model": { "type": "string", "title": "模型", "default": "deepseek-chat" },
+    "apiKey": { "type": "secret", "title": "API Key" },
+    "targetLang": { "type": "string", "title": "翻译目标语言", "default": "中文", "enum": ["中文", "English", "日本語"] }
+  },
+  "contributes": {
+    "commands": [
+      { "id": "explain", "title": "AI 解释", "icon": "text:释", "color": "#b48aff",
+        "requires": ["text"], "feedback": "result", "timeoutMs": 60000, "run": { "kind": "js" } },
+      { "id": "translate", "title": "AI 翻译", "icon": "text:译",
+        "requires": ["text"], "feedback": "result", "timeoutMs": 60000, "run": { "kind": "js" } },
+      { "id": "polish", "title": "AI 润色并替换", "icon": "text:润",
+        "requires": ["text"], "feedback": "result", "timeoutMs": 60000, "run": { "kind": "js" } }
+    ]
+  }
+}

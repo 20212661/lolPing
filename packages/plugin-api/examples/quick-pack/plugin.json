@@ -1,0 +1,23 @@
+{
+  "$schema": "../../plugin.schema.json",
+  "id": "quick-pack",
+  "name": "快捷入口包",
+  "version": "1.0.0",
+  "description": "纯声明式插件：没有任何代码，宿主直接执行，零进程开销。",
+  "engines": { "lolping": "^1.0.0" },
+  "permissions": ["open", "keys"],
+  "contributes": {
+    "commands": [
+      { "id": "deepseek", "title": "打开 DeepSeek", "icon": "text:DS", "color": "#4d6bfe",
+        "run": { "kind": "open", "target": "https://chat.deepseek.com" } },
+      { "id": "chatgpt", "title": "打开 ChatGPT", "icon": "text:GP",
+        "run": { "kind": "open", "target": "https://chatgpt.com" } },
+      { "id": "claude-cli", "title": "Claude Code 终端", "icon": "text:CC",
+        "run": { "kind": "open", "target": "wt.exe", "args": ["claude"] } },
+      { "id": "bing", "title": "Bing 搜索选中文本", "icon": "text:B", "requires": ["text"],
+        "run": { "kind": "url", "url": "https://www.bing.com/search?q={text:url}", "cleanText": true } },
+      { "id": "paste-plain", "title": "无格式粘贴", "icon": "text:Pv",
+        "run": { "kind": "keys", "keys": ["ctrl+shift+v"] } }
+    ]
+  }
+}

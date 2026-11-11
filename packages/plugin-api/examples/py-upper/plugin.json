@@ -1,0 +1,15 @@
+{
+  "$schema": "../../plugin.schema.json",
+  "id": "py-upper",
+  "name": "Python 示例：转大写",
+  "version": "1.0.0",
+  "description": "外部程序插件：stdio-json 协议，任何语言都能写。",
+  "engines": { "lolping": "^1.0.0" },
+  "permissions": ["shell", "paste"],
+  "contributes": {
+    "commands": [
+      { "id": "upper", "title": "转大写并替换", "icon": "text:AA", "requires": ["text"], "feedback": "instant",
+        "run": { "kind": "exec", "file": "python", "args": ["main.py"], "protocol": "stdio-json" } }
+    ]
+  }
+}
