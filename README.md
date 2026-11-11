@@ -158,8 +158,11 @@ text, and formats Electron cannot round-trip are not restored; Settings → Acti
 off (commands then read the clipboard as it is). A `js` command runs the plugin's code in a shared, lazily started plugin host
 process (reclaimed after five idle minutes, restarted when a call wedges, and a plugin that times out twice in a row is
 moved to a throwaway process): its `activate(ctx)` registers the handler, and results can stream into the bubble.
-The `exec` kind is listed and can be placed, but answers "not available yet" when released. A manifest that fails
-validation shows its reasons in Settings → Actions instead of loading. Removing the folder removes its slices.
+An `exec` command runs an external program of any language in the plugin's folder: with `stdio-json` it receives one
+request line on stdin and streams result lines back (a `then` follow-up can copy, paste or open afterwards); with
+`plain` the text goes to stdin and stdout is the result. Plugins holding the paste permission can also replace the
+selection through `host.paste`. A manifest that fails validation shows its reasons in Settings → Actions instead of
+loading. Removing the folder removes its slices.
 
 The manifest format, the plugin API and the planned host steps are specified in
 [`packages/plugin-api`](packages/plugin-api/README.md). This adds no new network host: declarative commands open

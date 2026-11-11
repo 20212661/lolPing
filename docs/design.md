@@ -528,3 +528,16 @@ rebuilding it, so the stream grows without restarting the animation); the final 
 Result action buttons arrive with the clickable-bubble step; until then they are logged and dropped. Verified in the
 built app with a streaming probe plugin: three chunks appear live, the done bubble keeps the text, and a
 `host.readClipboard()` call round-trips through the permission check.
+
+### 16.5 The exec executor and paste (step 6)
+
+`exec` commands run a child process (`execRun.ts`, pure over an injected child handle): stdio-json writes one
+validated ExecRequest line and closes stdin, parses every stdout line with `parseExecLine` (whitelisted error codes,
+bounded text, at most four follow-ups) and streams set/append into the same coalesced bubble path the js host uses;
+plain feeds the text to stdin and takes trimmed stdout as the result. A done-less exit is a pluginLoad failure, the
+manifest's timeout kills the child, and the process runs with the plugin's folder as cwd — the e2e run caught that
+one live (a python child exiting 2, `run.py` not found). A done's `then` follow-ups run in the main process, each
+behind its manifest permission: copy writes the clipboard, open goes through the usual open path, and paste is now
+real — the mirror of the selection grab: clipboard snapshot, write the text, synthesize Ctrl+V with the trigger
+lift, give the app 120 ms to take it, restore. `HostActions.paste` uses the same implementation. Verified in the
+built app with a python probe: streaming chunks land in the bubble, done keeps them, and the copy follow-up runs.

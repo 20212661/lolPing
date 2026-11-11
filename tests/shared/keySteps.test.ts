@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { copySteps, encodeSteps, parseKeyCombo, tapSteps, triggerVkOf, vkOf } from '../../src/shared/keySteps';
+import { copySteps, encodeSteps, parseKeyCombo, pasteSteps, tapSteps, triggerVkOf, vkOf } from '../../src/shared/keySteps';
 
 describe('vkOf', () => {
   it('maps letters, digits, modifiers, named keys and function keys', () => {
@@ -66,6 +66,17 @@ describe('copySteps', () => {
     expect(copySteps(null)).toEqual([
       { vk: 0x11, down: true }, { vk: 0x43, down: true },
       { vk: 0x43, down: false }, { vk: 0x11, down: false },
+    ]);
+  });
+});
+
+describe('pasteSteps', () => {
+  it('is the copy sequence with V instead of C', () => {
+    expect(pasteSteps(0x12)).toEqual([
+      { vk: 0x12, down: false },
+      { vk: 0x11, down: true }, { vk: 0x56, down: true },
+      { vk: 0x56, down: false }, { vk: 0x11, down: false },
+      { vk: 0x12, down: true },
     ]);
   });
 });

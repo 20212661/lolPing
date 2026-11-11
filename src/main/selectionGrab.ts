@@ -5,7 +5,7 @@
  * Everything OS-shaped is injected, so tests drive the whole flow with fakes.
  */
 
-import { encodeSteps, copySteps } from '../shared/keySteps';
+import { encodeSteps, copySteps, pasteSteps } from '../shared/keySteps';
 
 /** One clipboard format, as Electron 44's mimetype-based clipboard items see it. */
 export interface ClipboardItemSnapshot {
@@ -53,6 +53,24 @@ export async function grabSelection(
       text = await deps.clipboard.readText();
     }
     return text.trim() ? text : null;
+  } finally {
+    if (snapshot.length > 0) await deps.clipboard.writeAll(snapshot);
+    else deps.clipboard.clear();
+  }
+}
+
+/**
+ * Pastes `text` into the foreground app: clipboard snapshot, write the text, synthesize Ctrl+V (with the
+ * trigger lift), give the app a moment to take it, then restore. False when the helper never acked.
+ */
+export async function pasteText(deps: SelectionDeps, triggerVk: number | null, text: string): Promise<boolean> {
+  const snapshot = await deps.clipboard.readAll();
+  try {
+    await deps.clipboard.writeAll([{ mimetype: 'text/plain', blob: new Blob([text.slice(0, 16_384)]) }]);
+    const tapped = await deps.tap(encodeSteps(pasteSteps(triggerVk)));
+    if (!tapped) return false;
+    await deps.sleep(120); // the app reads the clipboard while handling the synthesized Ctrl+V
+    return true;
   } finally {
     if (snapshot.length > 0) await deps.clipboard.writeAll(snapshot);
     else deps.clipboard.clear();

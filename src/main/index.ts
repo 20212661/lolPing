@@ -1,5 +1,6 @@
 import { app, ClipboardItem, clipboard, dialog, Menu, powerMonitor, screen, shell, systemPreferences, utilityProcess } from 'electron';
-import { spawn } from 'node:child_process';
+import { spawn, type ChildProcess } from 'node:child_process';
+import { createInterface } from 'node:readline';
 import { randomBytes, randomInt } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { userInfo } from 'node:os';
@@ -24,8 +25,9 @@ import { parseTextInput } from '../shared/textCommands';
 import { updateErrorText, type UpdateState } from '../shared/update';
 import { registerAppScheme, serveAppScheme } from './appProtocol';
 import { CommandHost } from './commandHost';
-import { runDeclarative } from './declarativeRun';
-import { grabSelection, type SelectionDeps } from './selectionGrab';
+import { fillPlaceholders, runDeclarative } from './declarativeRun';
+import { runExecCommand, type ExecChild, type ExecDeps, type ThenAction } from './execRun';
+import { grabSelection, pasteText, type SelectionDeps } from './selectionGrab';
 import { encodeSteps, tapSteps, triggerVkOf } from '../shared/keySteps';
 import { openAppTargetKind } from './actionOpenApp';
 import { buildPluginList, findCommand, itemExists, listFolderInputs, scanPluginFolders } from './pluginScan';
@@ -192,8 +194,13 @@ function start(): void {
       case 'writeClipboard':
         if (typeof args[0] !== 'string') throw new Error('writeClipboard needs text');
         return clipboard.writeText((args[0] as string).slice(0, 16_384));
-      case 'paste':
-        throw new Error('paste lands with the clickable-bubble step');
+      case 'paste': {
+        if (typeof args[0] !== 'string') throw new Error('paste needs text');
+        if (PLATFORM !== 'win' || bridge.status !== 'running') throw new Error('key synthesis is unavailable');
+        const pasted = await pasteText(selectionDeps(), triggerVkOf(settings.trigger), args[0]);
+        if (!pasted) throw new Error('paste synthesis failed');
+        return undefined;
+      }
       case 'pressKeys': {
         if (!Array.isArray(args[0]) || args[0].length === 0 || args[0].length > 16) throw new Error('pressKeys needs keys');
         for (const combo of args[0] as unknown[]) {
@@ -290,6 +297,52 @@ function start(): void {
     execute: executeHostAction,
     log: (pluginId, level, message) => console[level === 'info' ? 'log' : level](`[plugin:${pluginId}] ${message}`),
     now: Date.now,
+    schedule: (fn, ms) => setTimeout(fn, ms),
+    cancel: clearTimeout,
+  });
+  /** A done's follow-up actions, each checked against the manifest's declared permissions. */
+  const runThenAction = async (manifest: import('../../packages/plugin-api/src/manifest').PluginManifest, action: ThenAction): Promise<void> => {
+    const perms = manifest.permissions ?? [];
+    const need = (p: string): void => {
+      if (!perms.includes(p as never)) throw new Error(`the plugin lacks the '${p}' permission`);
+    };
+    if (action.kind === 'copy') {
+      need('clipboard.write');
+      await clipboard.writeText(action.text);
+    } else if (action.kind === 'open') {
+      need('open');
+      if (/^https?:\/\//i.test(action.target)) await shell.openExternal(action.target);
+      else if (!spawnCommand(action.target, [])) throw new Error('could not start');
+    } else {
+      need('paste');
+      if (PLATFORM !== 'win' || bridge.status !== 'running') throw new Error('key synthesis is unavailable');
+      const pasted = await pasteText(selectionDeps(), triggerVkOf(settings.trigger), action.text);
+      if (!pasted) throw new Error('paste synthesis failed');
+    }
+  };
+  /** Wraps a real child process as the executor's injected boundary. */
+  const wrapExecChild = (child: ChildProcess): ExecChild => {
+    const lineListeners: Array<(line: string) => void> = [];
+    const exitListeners: Array<(code: number | null) => void> = [];
+    if (child.stdout) createInterface({ input: child.stdout }).on('line', (line) => lineListeners.forEach((f) => f(line)));
+    child.on('error', () => exitListeners.forEach((f) => f(null))); // e.g. ENOENT: no exit follows
+    child.on('exit', (code) => exitListeners.forEach((f) => f(code)));
+    return {
+      write: (d) => child.stdin?.write(d),
+      end: () => child.stdin?.end(),
+      kill: () => child.kill(),
+      onLine: (f) => lineListeners.push(f),
+      onExit: (f) => exitListeners.push(f),
+    };
+  };
+  const execDeps = (): ExecDeps => ({
+    spawn: (file, args, cwd) => {
+      try {
+        return wrapExecChild(spawn(file, args, { windowsHide: true, cwd }));
+      } catch {
+        return null;
+      }
+    },
     schedule: (fn, ms) => setTimeout(fn, ms),
     cancel: clearTimeout,
   });
@@ -399,6 +452,43 @@ function start(): void {
           if (result.detail) console.warn(`[plugin:${plugin.manifest.id}] ${result.detail}`);
           fail(t.actionErrors[result.error as ActionError] ?? t.actionErrors.unknown);
         }
+        return;
+      }
+      // exec commands run a child process speaking the contract's stdio (execRun.ts), then its follow-ups.
+      if (command.run.kind === 'exec') {
+        const config = settings.plugins.configs[plugin.manifest.id] ?? {};
+        const file = /[\/]/.test(command.run.file) ? join(pluginRoot, plugin.dir, command.run.file) : command.run.file;
+        let streamed = '';
+        const outcome = await runExecCommand(execDeps(), {
+          file,
+          args: (command.run.args ?? []).map((arg) => fillPlaceholders(arg, clip, config)),
+          cwd: join(pluginRoot, plugin.dir),
+          protocol: command.run.protocol,
+          command: command.id,
+          timeoutMs: command.timeoutMs ?? 15_000,
+          text: clip,
+          textSource: clipSource,
+          trigger: { source: 'wheel', displayId: a.displayId, x: Math.round(a.x), y: Math.round(a.y) },
+          config,
+        }, (op, text) => {
+          streamed = op === 'set' ? text : streamed + text;
+          overlays.actionBubble(a.displayId, { ...at, state: 'running', title, body: streamed });
+        });
+        const stillExec = actionRuns.finish(run);
+        if (quitting || !stillExec) return;
+        for (const action of outcome.then ?? []) {
+          try {
+            await runThenAction(plugin.manifest, action);
+          } catch (err) {
+            console.warn(`[plugin:${plugin.manifest.id}] then ${action.kind}: ${String(err)}`);
+          }
+        }
+        if (!outcome.ok) {
+          if (outcome.detail) console.warn(`[plugin:${plugin.manifest.id}] ${outcome.detail}`);
+          fail(t.actionErrors[outcome.error as ActionError] ?? t.actionErrors.unknown);
+          return;
+        }
+        overlays.actionBubble(a.displayId, { ...at, state: 'done', title, body: outcome.detail ?? (streamed || t.actionDone) });
         return;
       }
       const outcome = runDeclarative(command, clip, settings.plugins.configs[plugin.manifest.id] ?? {});

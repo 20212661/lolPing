@@ -59,12 +59,21 @@ export function tapSteps(combo: string): KeyStep[] | null {
  * Alt+Ctrl+C) and held again after, so the user's finger never notices. A mouse trigger needs no lift.
  */
 export function copySteps(triggerVk: number | null): KeyStep[] {
+  return comboWithTrigger(triggerVk, 0x43);
+}
+
+/** The Ctrl+V sequence for pasting, with the same trigger lift as the copy. */
+export function pasteSteps(triggerVk: number | null): KeyStep[] {
+  return comboWithTrigger(triggerVk, 0x56);
+}
+
+function comboWithTrigger(triggerVk: number | null, key: number): KeyStep[] {
   const lift = triggerVk !== null ? [{ vk: triggerVk, down: false }] : [];
   const hold = triggerVk !== null ? [{ vk: triggerVk, down: true }] : [];
   return [
     ...lift,
-    { vk: 0x11, down: true }, { vk: 0x43, down: true },
-    { vk: 0x43, down: false }, { vk: 0x11, down: false },
+    { vk: 0x11, down: true }, { vk: key, down: true },
+    { vk: key, down: false }, { vk: 0x11, down: false },
     ...hold,
   ];
 }

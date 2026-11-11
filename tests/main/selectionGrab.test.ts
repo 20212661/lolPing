@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { copySteps, encodeSteps } from '../../src/shared/keySteps';
-import { grabSelection, type ClipboardItemSnapshot, type SelectionClipboard, type SelectionDeps } from '../../src/main/selectionGrab';
+import { copySteps, encodeSteps, pasteSteps } from '../../src/shared/keySteps';
+import { grabSelection, pasteText, type ClipboardItemSnapshot, type SelectionClipboard, type SelectionDeps } from '../../src/main/selectionGrab';
 
 const TEXT = 'text/plain';
 
@@ -97,5 +97,34 @@ describe('grabSelection', () => {
     const d = deps(clip, { triggerVk: null, sleepMs: 500 });
     await expect(grabSelection(d, null, { timeoutMs: 400 })).resolves.toBeNull();
     expect(clip.wrote).toContain('clear'); // an empty snapshot restores to empty, not to the copy's nothing
+  });
+});
+
+describe('pasteText', () => {
+  it('writes the text, taps Ctrl+V with the trigger lift, waits, then restores the clipboard', async () => {
+    const clip = fakeClipboard({ text: 'old' });
+    const order: string[] = [];
+    const d: SelectionDeps = {
+      clipboard: clip,
+      tap: (steps) => { order.push(`tap:${steps}`); return Promise.resolve(true); },
+      sleep: (ms) => { order.push(`sleep:${ms}`); return Promise.resolve(); },
+      now: () => 0,
+    };
+    await expect(pasteText(d, 0x12, 'NEW')).resolves.toBe(true);
+    expect(order).toEqual([`tap:${encodeSteps(pasteSteps(0x12))}`, 'sleep:120']);
+    expect(clip.wrote).toEqual([TEXT, TEXT]); // the paste's write, then the snapshot's restore
+    await expect(clip.readText()).resolves.toBe('old');
+  });
+
+  it('returns false when the helper never acks, with the clipboard restored', async () => {
+    const clip = fakeClipboard({ text: 'old' });
+    const d: SelectionDeps = {
+      clipboard: clip,
+      tap: () => Promise.resolve(false),
+      sleep: () => Promise.resolve(),
+      now: () => 0,
+    };
+    await expect(pasteText(d, null, 'NEW')).resolves.toBe(false);
+    await expect(clip.readText()).resolves.toBe('old');
   });
 });
