@@ -26,7 +26,12 @@ export const preloadPath = (name: Page): string => join(__dirname, '../preload',
 export const assetPath = (...parts: string[]): string =>
   app.isPackaged ? join(__dirname, '../renderer', ...parts) : join(app.getAppPath(), 'assets', ...parts);
 
-export const settingsDir = (): string => join(app.getPath('appData'), 'lolPing');
+/**
+ * A development build can point the settings folder at the repo instead (LOLPING_SETTINGS_DIR, like LOLPING_RELAYS):
+ * hand-testing then works where %APPDATA% isn't writable. Packaged builds always use the real folder.
+ */
+export const settingsDir = (): string =>
+  !app.isPackaged && process.env.LOLPING_SETTINGS_DIR ? process.env.LOLPING_SETTINGS_DIR : join(app.getPath('appData'), 'lolPing');
 
 /** Where `page` is served from: the Vite dev server in development, lolping://app in production. `hash` is without the #. */
 export function pageUrl(page: Page, hash = ''): string {
