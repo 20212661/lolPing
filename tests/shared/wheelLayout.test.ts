@@ -126,15 +126,15 @@ describe('works for string refs', () => {
 });
 
 describe('repairUnknownItems', () => {
-  const known = (id: WheelItem): boolean => isPingId(id) || id === 'quick-pack.bing' || id === 'plugin:old';
+  const known = (id: WheelItem): boolean => isPingId(id) || id === 'quick-pack.bing';
 
   it('returns an equal wheel when every item is known', () => {
-    const wheel: WheelItem[] = ['danger', 'quick-pack.bing', 'plugin:old', 'push', 'omw', 'allin', 'assist', 'needvision'];
+    const wheel: WheelItem[] = ['danger', 'quick-pack.bing', 'push', 'omw', 'allin', 'assist', 'needvision', 'enemyvision'];
     expect(repairUnknownItems(wheel, known)).toEqual(wheel);
   });
 
   it('replaces a gone ref or action with a default ping that is not already there', () => {
-    const wheel: WheelItem[] = ['danger', 'gone.bing', 'plugin:gone', 'push', 'omw', 'allin', 'assist', 'needvision'];
+    const wheel: WheelItem[] = ['danger', 'gone.bing', 'push', 'omw', 'allin', 'assist', 'needvision', 'enemyvision'];
     const repaired = repairUnknownItems(wheel, known);
     expect(repaired[0]).toBe('danger');
     expect(repaired[1]).toBe('missing'); // first default ping not on the wheel

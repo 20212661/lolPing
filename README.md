@@ -126,28 +126,13 @@ Join a room and everyone in it sees your pings on their own screen, at the same 
 - A room holds up to 16 people. To remove someone, start a kick vote, or leave and create a new room.
 - **Privacy:** pings, emotes, text, votes, your emote images and names are end-to-end encrypted with a key made from the room code, and text and votes use no new network hosts. People on your network can see your local IP address. With internet connections on, public relays see your IP address, an anonymous room ID and when you send, but never your content, images or name. Turn **Allow internet connections** off to stay on your local network.
 
-## Custom Cordis actions
-
-Settings → Actions → Add plugin creates a named action. Enter the absolute path to a local `.cjs`, `.mjs` or `.js`
-file, the command it registers, and its JSON configuration. Then go to Wheel and drag its tile onto a slice.
-Hold the wheel key, drag to that slice and release to run it. Removing a plugin restores only its wheel slots to pings.
-
-Try [`tools/plugin-examples/hello.cjs`](tools/plugin-examples/hello.cjs): use command `hello` and configuration
-`{"message":"Hello from my plugin"}`. It shows that message beside the wheel. To try its `clipboard` command,
-add another binding to the same file, enable “Pass clipboard text to the plugin”, and copy some text first.
-See [`docs/plugins.md`](docs/plugins.md) for the API and lifecycle.
-
-Each custom action runs in a fresh Electron utility process. The default timeout is 15 seconds (configurable from
-1 to 120); timeout, settings changes and quitting terminate the process. A running action ignores repeat gestures,
-and at most four plugin processes run at once. Plugins are not background services. TypeScript plugins must be compiled
-to JavaScript first. The host uses the project's pinned `cordis` version, not the DeepSeek fork.
-
 ## Plugin folder (experimental)
 
-Besides the bindings above, lolPing reads plugins from a `plugins` folder next to its settings (`%APPDATA%\lolPing\plugins`
-on Windows). Each subfolder with a `plugin.json` manifest is listed in Settings → Actions automatically: its name, the
-permissions it asks for, its commands and its configuration fields. Drag a command from the Wheel pool onto a slice,
-the same way as any other item.
+Plugins live in a `plugins` folder next to lolPing's settings (`%APPDATA%\lolPing\plugins` on Windows). Each subfolder
+with a `plugin.json` manifest is listed in Settings → Actions automatically: its name, the permissions it asks for,
+its commands and its configuration fields. Drag a command from the Wheel pool onto a slice, the same way as any other
+item. The four built-in actions (open app, run script, explain with AI, search) are themselves one built-in plugin
+going through the same permission-checked API.
 
 Manifest commands with run kinds `url`, `open` and `keys` run directly in the app, with no process at all: a `url` command
 fills the selected text into `{text:url}` and opens the address; an `open` command starts a program with `{config.<key>}`

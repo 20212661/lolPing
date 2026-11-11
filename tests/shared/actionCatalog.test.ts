@@ -16,20 +16,25 @@ describe('actionCatalog', () => {
     expect(isActionId(42)).toBe(false);
   });
 
-  it('validates custom ids and normalizes bounded, unique plugin bindings', () => {
+  it('still recognises the shape of a v2 binding, so an old settings file loads and repairs its wheel', () => {
     expect(isActionId('plugin:hello')).toBe(true);
     expect(isActionId('plugin:../hello')).toBe(false);
     expect(isActionId('plugin:')).toBe(false);
-    const normalized = normalizeActions({ custom: [
-      null, { id: 'open-app' }, { id: 'plugin:hello', name: ' Hello ', timeoutMs: Infinity },
-      { id: 'plugin:hello', name: 'duplicate' }, { id: 'plugin:short', timeoutMs: -1, useClipboard: 'true' },
-      { id: 'plugin:long', timeoutMs: 999_999, enabled: false },
-    ] }).custom;
-    expect(normalized).toHaveLength(3);
-    expect(normalized[0]).toMatchObject({ name: 'Hello', config: '{}', command: 'hello', timeoutMs: 15_000 });
-    expect(normalized[1]).toMatchObject({ timeoutMs: 1000, useClipboard: false });
-    expect(normalized[2]).toMatchObject({ timeoutMs: 120_000, enabled: false });
-    expect(normalizeActions({ custom: Array.from({ length: 40 }, (_, i) => ({ id: `plugin:p${i}` })) }).custom).toHaveLength(32);
+    expect(isWheelItem('plugin:hello')).toBe(true);
+  });
+
+  it('normalizes the four built-ins with bounded strings and http-only urls', () => {
+    const normalized = normalizeActions({
+      openApp: { target: '  https://x.com  ' },
+      runScript: { command: 'x'.repeat(5000) },
+      aiExplain: { baseUrl: 'not-a-url', apiKey: 'k', model: 'm' },
+      clipboardSearch: { url: 'ftp://nope' },
+    });
+    expect(normalized.openApp.target).toBe('https://x.com');
+    expect(normalized.runScript.command).toHaveLength(1024);
+    expect(normalized.aiExplain.baseUrl).toBe('https://api.openai.com/v1');
+    expect(normalized.clipboardSearch.url).toBe('https://www.bing.com/search?q=%s');
+    expect(normalizeActions({ custom: [{ id: 'plugin:hello' }] })).toEqual(defaultActions()); // a v2 field is ignored
   });
 
   it('validates plugin results and bounds text without retaining extra fields', () => {

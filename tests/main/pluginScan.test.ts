@@ -77,10 +77,9 @@ describe('findCommand', () => {
 
   it('counts a ref known to the scan as an existing wheel item, and an unknown one as gone', () => {
     const s = scan();
-    expect(itemExists(s, [], 'quick-pack.bing')).toBe(true);
-    expect(itemExists(s, [], 'nope.bing')).toBe(false);
-    expect(itemExists(s, ['plugin:old'], 'plugin:old')).toBe(true);
-    expect(itemExists(s, [], 'plugin:old')).toBe(false);
-    expect(itemExists(s, [], 'danger')).toBe(true); // pings always exist
+    expect(itemExists(s, 'quick-pack.bing')).toBe(true);
+    expect(itemExists(s, 'nope.bing')).toBe(false);
+    expect(itemExists(s, 'plugin:old' as never)).toBe(false); // v2 bindings are always gone now
+    expect(itemExists(s, 'danger')).toBe(true); // pings always exist
   });
 });

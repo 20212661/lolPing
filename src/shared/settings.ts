@@ -341,7 +341,7 @@ export function normalizeSettings(raw: unknown, platform: Platform = 'win', iden
   // Wheel repair: a dropped custom action's slots go back to distinct default pings (command refs are kept;
   // the main process repairs those against the plugin scan, which a settings file cannot know).
   const wheel = isValidItemWheel(r.wheel)
-    ? repairUnknownItems(r.wheel, (id) => !isPluginActionId(id) || actions.custom.some((a) => a.id === id))
+    ? repairUnknownItems(r.wheel, (id) => !isPluginActionId(id)) // v2 bindings are gone; their slots go back to pings
     : [...DEFAULT_WHEEL];
   return {
     version: 1,

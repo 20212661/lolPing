@@ -2,7 +2,7 @@ import { Button, Dropdown, Input, Option, Switch } from '@fluentui/react-compone
 import { ClipboardPasteRegular, CodeRegular, OpenRegular, SearchRegular, SparkleRegular } from '@fluentui/react-icons';
 import { useEffect, useState, type KeyboardEvent } from 'react';
 import type { ManifestErrorCode } from '../../../../packages/plugin-api/src/validate';
-import { defaultCustomAction, MAX_CUSTOM_ACTIONS, type ActionsSettings, type CustomAction } from '../../../shared/actionCatalog';
+import type { ActionsSettings } from '../../../shared/actionCatalog';
 import type { PluginListResult } from '../../../shared/commandTiles';
 import type { Settings } from '../../../shared/settings';
 import { api } from '../api';
@@ -84,9 +84,6 @@ export function ActionsSection(
     void update({ actions: { ...s.actions, ...patch } });
   };
   const { openApp, runScript, aiExplain, clipboardSearch } = s.actions;
-  const editPlugin = (id: string, patch: Partial<CustomAction>): void => {
-    set({ custom: s.actions.custom.map((a) => a.id === id ? { ...a, ...patch } : a) });
-  };
   const setPluginValue = (pluginId: string, key: string, value: string | number | boolean): void => {
     const current = s.plugins.configs[pluginId] ?? {};
     void update({ plugins: { ...s.plugins, configs: { ...s.plugins.configs, [pluginId]: { ...current, [key]: value } } } });
@@ -118,34 +115,10 @@ export function ActionsSection(
       <SettingRow icon={<SearchRegular />} title={t.actionNames['clipboard-search']} description={t.actionSearchDesc}>
         <ActionInput value={clipboardSearch.url} onSave={(url) => set({ clipboardSearch: { url } })} />
       </SettingRow>
-      <h3>{t.pluginTitle}</h3>
-      <p className="desc">{t.pluginDescription}</p>
-      <p className="desc">{t.pluginTrust}</p>
-      {s.actions.custom.map((a) => (
-        <div className="card pluginFields" key={a.id}>
-          <label>{t.pluginName}<ActionInput value={a.name} onSave={(name) => editPlugin(a.id, { name })} /></label>
-          <label>{t.pluginEntry}<ActionInput value={a.entry} onSave={(entry) => editPlugin(a.id, { entry })} /></label>
-          <label>{t.pluginCommand}<ActionInput value={a.command} onSave={(command) => editPlugin(a.id, { command })} /></label>
-          <label>{t.pluginConfig}<ActionInput value={a.config} onSave={(config) => editPlugin(a.id, { config })} /></label>
-          <label>{t.pluginTimeout}<ActionInput value={String(a.timeoutMs / 1000)}
-            onSave={(seconds) => editPlugin(a.id, { timeoutMs: Number(seconds) * 1000 })} /></label>
-          <Switch label={t.pluginClipboard} checked={a.useClipboard}
-            onChange={(_, d) => editPlugin(a.id, { useClipboard: d.checked })} />
-          <div className="pluginButtons">
-            <Switch label={t.pluginEnabled} checked={a.enabled}
-              onChange={(_, d) => editPlugin(a.id, { enabled: d.checked })} />
-            <Button onClick={() => set({ custom: s.actions.custom.filter((item) => item.id !== a.id) })}>
-              {t.pluginRemove}
-            </Button>
-          </div>
-        </div>
-      ))}
-      <Button disabled={s.actions.custom.length >= MAX_CUSTOM_ACTIONS} onClick={() => set({
-        custom: [...s.actions.custom, defaultCustomAction(`plugin:${crypto.randomUUID()}`, t.pluginNewName)],
-      })}>{t.pluginAdd}</Button>
 
       <h3>{t.pluginsSectionTitle}</h3>
       <p className="desc">{t.pluginsSectionDesc}</p>
+      <p className="desc">{t.pluginTrust}</p>
       <div className="pluginButtons">
         <Button onClick={onRefreshPlugins}>{t.pluginsRefresh}</Button>
         <Button onClick={() => void api.openPluginsFolder()}>{t.pluginsOpenFolder}</Button>

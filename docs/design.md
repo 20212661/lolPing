@@ -440,26 +440,16 @@ A wheel slice can hold an action instead of a ping: releasing on it runs the act
 - **Icons:** every action draws its slice icon as an inline SVG data URI (`actionIconUrl`), shared by the wheel, the settings pool and the tests. Nothing loads from disk, so no new assets ship.
 - **Not in the helper, not on the wire:** the gesture, the room protocol and the helper's config are unchanged, so an older or newer peer needs nothing, and PROTOCOL_VERSION stays. Security is the settings file's: run-script runs whatever command is configured, which is why actions never arrive from anywhere but this machine's own settings.
 
-### 16.1 Local custom plugins
+### 16.1 The v2 Cordis system, retired
 
-`actions.custom` holds up to 32 named bindings with stable `plugin:<id>` identifiers, entry paths, command names,
-JSON configuration, enabled and clipboard flags, and a 1–120 second timeout (15 seconds by default). Old settings
-gain an empty list. Removing a binding repairs only wheel slots that referenced it; disabled bindings stay assigned.
-The settings action pool includes those bindings alongside the four built-ins. The main process resolves plugin ids
-against its current settings before executing anything, so the overlay never chooses a file or passes code.
-
-`PluginRunner` starts `pluginWorker.js` with Electron `utilityProcess` for each custom invocation. The worker owns a
-fresh Cordis Context and CommandService, imports the configured local JavaScript module, awaits loading, executes
-the configured command, disposes the context and sends a bounded result. Plugin code never runs in the main process
-or native input helper. A parent-side deadline terminates stuck module loading, execution or cleanup. Settings
-changes and quitting abort pending runs and terminate workers. This is process separation, not a security sandbox;
-trusted plugins retain the user's Node filesystem and network permissions. No fixed network host is added.
-
-The existing `overlay:actioned` IPC and `action:bubble` feedback carry the invocation and result. The main process
-suppresses duplicate gestures while that action runs, and the runner caps concurrent workers at four. Per-display
-invocation numbers keep an old completion from replacing a newer bubble. Host reloads are serialized and obsolete
-configurations are skipped. An instant action clears a superseded bubble through `action:clear`, so a cancelled
-progress message cannot stay on screen forever. The API, example and limitations are documented in `docs/plugins.md`.
+The first plugin system (settings-bound Cordis bindings, `CommandHostDeps`, one throwaway `pluginWorker.js` per
+trigger) is gone: the manifest system replaced it end to end. The four built-in actions became one built-in plugin
+(`builtInActions.ts`): an in-memory manifest whose handlers speak the same contract API, run in-process and call the
+same permission-checked host actions a scanned plugin's worker gets — `executeHostAction` knows the built-in
+manifest, and `run-script` reaches its fire-and-forget shell through `host.open('cmd.exe', ['/c', line])`, the
+detached-spawn path an `open` command with arguments takes. Nothing in the app can do more than a folder plugin
+can. Old settings files still load: `isPluginActionId` keeps recognising the v2 id shape so the wheel repairs those
+slots to pings instead of resetting, and `actions.custom` is ignored. `cordis` is no longer a dependency.
 
 ### 16.2 Scanned plugin folders (`packages/plugin-api`)
 

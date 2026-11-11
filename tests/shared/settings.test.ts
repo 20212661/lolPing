@@ -649,14 +649,12 @@ describe('custom emote effects', () => {
 });
 
 describe('wheel actions in settings', () => {
-  it('keeps custom bindings and repairs only missing plugin slots', () => {
+  it('repairs v2 plugin slots back to pings without touching the rest of the wheel', () => {
     const wheel = ['plugin:hello', 'bait', ...DEFAULT_SETTINGS.wheel.slice(2)];
-    const configured = normalizeSettings({ wheel, actions: { custom: [{ id: 'plugin:hello', enabled: false }] } });
-    expect(configured.wheel).toEqual(wheel);
-    const removed = normalizeSettings({ ...configured, actions: { custom: [] } });
-    expect(removed.wheel.slice(1)).toEqual(wheel.slice(1));
-    expect(removed.wheel[0]).toBe('danger');
-    expect(new Set(removed.wheel).size).toBe(8);
+    const repaired = normalizeSettings({ wheel, actions: { custom: [{ id: 'plugin:hello', enabled: false }] } });
+    expect(repaired.wheel.slice(1)).toEqual(wheel.slice(1));
+    expect(repaired.wheel[0]).toBe('danger'); // the v2 binding's slot, back to a default ping
+    expect(new Set(repaired.wheel).size).toBe(8);
   });
 
   it('gives an old settings file the default actions, keeping its wheel', () => {

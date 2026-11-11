@@ -8,31 +8,13 @@ export { isCommandRef };
  * to the room. The ids stay clear of every ping id, so a wheel slot needs no prefix to say which it is.
  */
 export type BuiltinActionId = 'open-app' | 'run-script' | 'ai-explain' | 'clipboard-search';
-export type PluginActionId = `plugin:${string}`;
-export type ActionId = BuiltinActionId | PluginActionId;
+export type ActionId = BuiltinActionId;
 /** A scanned plugin command's full name, from the manifest system (packages/plugin-api). */
 export type CommandRef = import('../../packages/plugin-api/src/manifest').CommandRef;
 
-export const isPluginActionId = (v: unknown): v is PluginActionId =>
+/** Only the shape of a v2 binding, kept so old settings files load and repair instead of resetting the wheel. */
+export const isPluginActionId = (v: unknown): v is `plugin:${string}` =>
   typeof v === 'string' && /^plugin:[a-z0-9][a-z0-9-]{0,63}$/.test(v);
-
-export interface CustomAction {
-  id: PluginActionId;
-  name: string;
-  entry: string;
-  command: string;
-  config: string;
-  enabled: boolean;
-  useClipboard: boolean;
-  timeoutMs: number;
-}
-
-export const MAX_CUSTOM_ACTIONS = 32;
-
-/** A new plugin binding; its id stays the same when its name or file changes. */
-export const defaultCustomAction = (id: PluginActionId, name: string): CustomAction => ({
-  id, name, entry: '', command: 'hello', config: '{}', enabled: true, useClipboard: false, timeoutMs: 15_000,
-});
 
 /** How a released action answers: 'instant' just runs (a bubble only on failure), 'result' shows a bubble at the cursor. */
 export type ActionFeedback = 'instant' | 'result';
@@ -101,9 +83,8 @@ export interface ActionsSettings {
   /** What 'run-script' runs in a hidden shell. Empty leaves the action unconfigured. */
   runScript: { command: string };
   aiExplain: AiExplainConfig;
-  /** Where 'clipboard-search' searches; '%s' is the clipboard text. */
+  /** Where 'clipboard-search' searches; '%s' is the text. */
   clipboardSearch: { url: string };
-  custom: CustomAction[];
 }
 
 export const DEFAULT_SEARCH_URL = 'https://www.bing.com/search?q=%s';
@@ -113,7 +94,6 @@ export const defaultActions = (): ActionsSettings => ({
   runScript: { command: '' },
   aiExplain: { baseUrl: 'https://api.openai.com/v1', apiKey: '', model: 'gpt-4o-mini' },
   clipboardSearch: { url: DEFAULT_SEARCH_URL },
-  custom: [],
 });
 
 const str = (raw: unknown, max: number, fallback: string): string => {
@@ -149,31 +129,7 @@ export function normalizeActions(raw: unknown): ActionsSettings {
       model: str(ai.model, 128, d.aiExplain.model),
     },
     clipboardSearch: { url: httpStr(search.url, 1024, d.clipboardSearch.url) },
-    custom: normalizeCustomActions(r.custom),
   };
-}
-
-function normalizeCustomActions(raw: unknown): CustomAction[] {
-  if (!Array.isArray(raw)) return [];
-  const actions: CustomAction[] = [];
-  for (const item of raw) {
-    if (actions.length >= MAX_CUSTOM_ACTIONS) break;
-    if (typeof item !== 'object' || item === null || Array.isArray(item)) continue;
-    const r = item as Record<string, unknown>;
-    if (!isPluginActionId(r.id) || actions.some((a) => a.id === r.id)) continue;
-    actions.push({
-      id: r.id,
-      name: str(r.name, 64, r.id) || r.id,
-      entry: str(r.entry, 2048, ''),
-      command: str(r.command, 128, 'hello'),
-      config: str(r.config, 16_384, '{}') || '{}',
-      enabled: r.enabled !== false,
-      useClipboard: r.useClipboard === true,
-      timeoutMs: typeof r.timeoutMs === 'number' && Number.isFinite(r.timeoutMs)
-        ? Math.min(120_000, Math.max(1000, Math.round(r.timeoutMs))) : 15_000,
-    });
-  }
-  return actions;
 }
 
 /** Why an action failed; the bubble and the log read these, so the ids are stable. */

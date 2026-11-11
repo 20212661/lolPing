@@ -73,12 +73,12 @@ authors keep the language of their own titles and results.
 
 ## Implementation steps
 
-Status: steps 1–6 have landed (the scan, the settings list and configuration forms, `CommandRef` wheel
-bindings, the `url`/`open`/`keys` declarative executors, selection reading via simulated Ctrl+C with clipboard
-restore, the shared plugin host for `js` commands with streaming results, idle reclaim, timeout restart and the
-demotion rule, and the `exec` executor with stdio-json/plain modes, `then` follow-ups and paste; still ahead:
-UI-Automation-first selection, clickable result buttons, and steps 7–8). Each step leaves the app working and
-independently testable.
+Status: steps 1–7 have landed (the scan, the settings list and configuration forms, `CommandRef` wheel bindings,
+the `url`/`open`/`keys` declarative executors, selection reading via simulated Ctrl+C with clipboard restore, the
+shared plugin host for `js` commands with streaming results, the `exec` executor with stdio-json/plain modes,
+`then` follow-ups and paste, and the four built-ins rewritten as one built-in plugin with the v2 Cordis system —
+and its privilege channel — retired; still ahead: step 8, UI-Automation-first selection and clickable result
+buttons). Each step leaves the app working and independently testable.
 
 1. Land this package in `packages/plugin-api`; the host imports its types and `validateManifest` directly.
 2. **Plugin folder scan**: validate with `validateManifest`, list commands in the settings (with permission

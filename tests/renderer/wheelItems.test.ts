@@ -24,9 +24,6 @@ describe('wheelItems', () => {
 });
 
 describe('wheel items with actions', () => {
-  it('keeps a custom command id through the displayed wheel item', () => {
-    expect(wheelItemFor('plugin:hello', {})).toEqual({ key: 'plugin:hello', icon: actionIconUrl('plugin:hello') });
-  });
   it('gives an action slot its own icon and keeps its id as the key', () => {
     expect(wheelItemFor('ai-explain', {})).toEqual({ key: 'ai-explain', icon: actionIconUrl('ai-explain') });
   });

@@ -115,12 +115,9 @@ function SettingsPage({ settings: s, status, update }: { settings: Settings; sta
     id: p.id, icon: textureUrl(p.icon), name: t.pingNames[p.id], badge: NEW_PINGS.has(p.id) ? t.wheelNew : undefined,
   }));
   const actionPool: PoolItem<WheelItem>[] = ACTIONS.map((a) => ({ id: a.id, icon: actionIconUrl(a.id), name: t.actionNames[a.id] }));
-  const customPool: PoolItem<WheelItem>[] = s.actions.custom.map((a) => ({
-    id: a.id, icon: actionIconUrl(a.id), name: a.name, badge: a.enabled ? undefined : t.pluginDisabled,
-  }));
   const commandPool: PoolItem<WheelItem>[] = (pluginList?.plugins ?? []).flatMap((p) =>
     p.commands.map((c) => ({ id: c.ref as CommandRef, icon: c.icon, name: c.title })));
-  const wheelPool: PoolItem<WheelItem>[] = [...pingPool, ...actionPool, ...customPool, ...commandPool];
+  const wheelPool: PoolItem<WheelItem>[] = [...pingPool, ...actionPool, ...commandPool];
 
   useEffect(() => {
     const show = (id: string) => document.getElementById(id)?.scrollIntoView({ behavior: 'smooth' });

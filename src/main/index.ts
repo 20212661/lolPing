@@ -7,7 +7,8 @@ import { userInfo } from 'node:os';
 import { join } from 'node:path';
 import { isCommandRef } from '../../packages/plugin-api/src/manifest';
 import { PERMISSION_OF, type HostMethod, type ToPluginHost } from '../../packages/plugin-api/src/protocol';
-import { actionById, isPluginActionId, type ActionError, type WheelItem } from '../shared/actionCatalog';
+import type { HostActions, Invocation } from '../../packages/plugin-api/src/api';
+import { parseActionResult, type ActionError, type ActionResult, type BuiltinActionId, type WheelItem } from '../shared/actionCatalog';
 import { commandIcons } from '../shared/commandTiles';
 import { repairUnknownItems } from '../shared/wheelLayout';
 import { resolveLang, strings, type Strings } from '../shared/i18n';
@@ -24,17 +25,15 @@ import { overlaySettings, soundLevel, type Settings } from '../shared/settings';
 import { parseTextInput } from '../shared/textCommands';
 import { updateErrorText, type UpdateState } from '../shared/update';
 import { registerAppScheme, serveAppScheme } from './appProtocol';
-import { CommandHost } from './commandHost';
 import { fillPlaceholders, runDeclarative } from './declarativeRun';
 import { runExecCommand, type ExecChild, type ExecDeps, type ThenAction } from './execRun';
 import { grabSelection, pasteText, type SelectionDeps } from './selectionGrab';
 import { encodeSteps, tapSteps, triggerVkOf } from '../shared/keySteps';
-import { openAppTargetKind } from './actionOpenApp';
+import { BUILT_IN_ACTIONS, BUILTIN_MANIFEST, openAppTargetKind, type BuiltInAction } from './builtInActions';
 import { buildPluginList, findCommand, itemExists, listFolderInputs, scanPluginFolders } from './pluginScan';
 import { readPluginStore, writePluginStore } from './pluginStorage';
 import { SharedPluginHost, type HostProcess } from './sharedPluginHost';
 import { ActionRuns } from './actionRuns';
-import { PluginRunner } from './pluginRunner';
 import { resolveTarget, toShared } from './displayNumbers';
 import { EmoteCache } from './emoteCache';
 import { EmoteLibrary, resolveEmoteArt } from './emoteLibrary';
@@ -127,7 +126,7 @@ function start(): void {
   const pluginRoot = join(settingsDir(), 'plugins');
   let scan = scanPluginFolders(listFolderInputs(pluginRoot));
   let pluginList = buildPluginList(scan, pluginRoot);
-  const itemKnown = (id: WheelItem): boolean => itemExists(scan, settings.actions.custom.map((a) => a.id), id);
+  const itemKnown = (id: WheelItem): boolean => itemExists(scan, id);
   const repairedWheel = repairUnknownItems(settings.wheel, itemKnown);
   if (repairedWheel.some((id, i) => id !== settings.wheel[i])) settings = store.update({ wheel: repairedWheel });
   // The language setting, or the system display language when it's 'auto'.
@@ -149,39 +148,14 @@ function start(): void {
   overlays.start();
   const bridge = new InputBridge({ command: helperExePath() });
 
-  // Wheel actions: the four built-ins run in a Cordis plugin host (commandHost.ts). Reloaded when their settings change.
-  const plugins = new PluginRunner(() => utilityProcess.fork(join(__dirname, 'pluginWorker.js'), [], {
-    stdio: 'ignore', serviceName: 'lolPing plugin',
-  }));
-  const commands = new CommandHost({
-    runPlugin: (action, env) => plugins.execute(action, env),
-    platform: PLATFORM,
-    readClipboard: () => clipboard.readText().catch(() => ''),
-    openPath: (path) => shell.openPath(path),
-    openExternal: (url) => shell.openExternal(url),
-    spawnDetached: (file, args) => {
-      try {
-        const child = spawn(file, args, { detached: true, stdio: 'ignore', windowsHide: true });
-        child.unref();
-        // A failure that only surfaces on the child's 'error' event (a missing program) can no longer reach the caller.
-        child.on('error', (err) => console.warn('[actions]', err.message));
-        return { ok: true };
-      } catch (err) {
-        return { ok: false, error: String(err) };
-      }
-    },
-    fetchImpl: fetch,
-  });
-  const configureActions = (): void => {
-    void commands.applyConfig(settings.actions).catch((err: unknown) => console.warn('[actions]', err));
-  };
-  configureActions();
   const actionRuns = new ActionRuns();
   // The shared plugin host: js commands from scanned plugins run here (packages/plugin-api protocol).
   const pluginDataDir = join(pluginRoot, 'data');
   /** Runs one validated host action for a plugin, after its permission check. */
   const executeHostAction = async (pluginId: string, method: string, args: unknown[]): Promise<unknown> => {
-    const manifest = scan.plugins.find((p) => p.manifest.id === pluginId)?.manifest;
+    const manifest = pluginId === BUILTIN_MANIFEST.id
+      ? BUILTIN_MANIFEST
+      : scan.plugins.find((p) => p.manifest.id === pluginId)?.manifest;
     const perm = PERMISSION_OF[method as HostMethod];
     if (perm !== null && !(manifest?.permissions ?? []).includes(perm as never)) {
       throw new Error(`plugin '${pluginId}' lacks the '${perm}' permission`);
@@ -382,6 +356,77 @@ function start(): void {
       return false;
     }
   };
+  /** Text for anything that requires it: the selection when synthesis is allowed, the clipboard otherwise. */
+  const gatherText = async (): Promise<{ text: string; source: 'selection' | 'clipboard' }> => {
+    const vk = triggerVkOf(settings.trigger);
+    if (PLATFORM === 'win' && settings.plugins.simulateCopy && bridge.status === 'running' && vk !== null) {
+      const sel = await grabSelection(selectionDeps(), vk).catch(() => null);
+      if (sel !== null) return { text: sel, source: 'selection' };
+    }
+    return { text: await clipboard.readText().catch(() => ''), source: 'clipboard' };
+  };
+
+  // The built-in actions run in-process through the same permission-checked host actions a scanned
+  // plugin's worker gets (builtInActions.ts); the v2 privilege channel is gone.
+  const builtInHost: HostActions = {
+    getSelection: () => executeHostAction(BUILTIN_MANIFEST.id, 'getSelection', []) as Promise<string>,
+    readClipboard: () => executeHostAction(BUILTIN_MANIFEST.id, 'readClipboard', []) as Promise<string>,
+    writeClipboard: (t) => executeHostAction(BUILTIN_MANIFEST.id, 'writeClipboard', [t]) as Promise<void>,
+    paste: (t) => executeHostAction(BUILTIN_MANIFEST.id, 'paste', [t]) as Promise<void>,
+    pressKeys: (keys, opts) => executeHostAction(BUILTIN_MANIFEST.id, 'pressKeys', [keys, opts]) as Promise<void>,
+    open: (target, args) => executeHostAction(BUILTIN_MANIFEST.id, 'open', [target, args]) as Promise<void>,
+    exec: (file, args, opts) => executeHostAction(BUILTIN_MANIFEST.id, 'exec', [file, args, opts]) as never,
+    notify: (t) => {
+      void executeHostAction(BUILTIN_MANIFEST.id, 'notify', [t]);
+    },
+  };
+  const builtInConfig = (id: BuiltinActionId): Record<string, unknown> => {
+    const a = settings.actions;
+    if (id === 'ai-explain') return { ...a.aiExplain };
+    if (id === 'open-app') return { ...a.openApp };
+    if (id === 'run-script') return { ...a.runScript };
+    return { ...a.clipboardSearch };
+  };
+  const runBuiltInAction = (a: SharedAction, def: BuiltInAction): void => {
+    const t = text();
+    const title = t.actionNames[def.id];
+    const at = { x: a.x, y: a.y };
+    const run = actionRuns.start(def.id, a.displayId);
+    if (!run) return;
+    if (def.feedback === 'result') overlays.actionBubble(a.displayId, { ...at, state: 'running', title, body: t.actionBubbleRunning });
+    else overlays.clearActionBubble(a.displayId);
+    const abort = new AbortController();
+    void (async () => {
+      let collected = { text: '', source: 'clipboard' as 'selection' | 'clipboard' };
+      if (def.requiresText) collected = await gatherText();
+      const inv: Invocation = {
+        command: def.id,
+        trigger: { source: 'wheel', displayId: a.displayId, x: Math.round(a.x), y: Math.round(a.y) },
+        signal: abort.signal,
+        text: collected.text || undefined,
+        textSource: collected.text ? collected.source : undefined,
+        app: undefined,
+        config: builtInConfig(def.id),
+        host: builtInHost,
+        result: { set: () => undefined, append: () => undefined, setActions: () => undefined },
+      };
+      let r: ActionResult;
+      try {
+        r = parseActionResult(await def.handler(inv)) ?? { ok: false, error: 'unknown' };
+      } catch (err) {
+        r = { ok: false, error: 'unknown', detail: String(err) };
+      }
+      const current = actionRuns.finish(run);
+      if (quitting || !current) return;
+      if (r.ok) {
+        if (r.detail || def.feedback === 'result') overlays.actionBubble(a.displayId, { ...at, state: 'done', title, body: r.detail ?? t.actionDone });
+      } else {
+        if (r.detail) console.warn(`[builtin:${def.id}] ${r.detail}`);
+        overlays.actionBubble(a.displayId, { ...at, state: 'error', title, body: t.actionErrors[r.error] });
+      }
+    })();
+  };
+
   /** Runs a scanned plugin's declarative command (url/open/keys); js and exec answer "not yet". */
   const runScannedCommand = (found: ReturnType<typeof findCommand>, a: SharedAction): void => {
     if (!found) return;
@@ -403,19 +448,9 @@ function start(): void {
       };
       // A text-requiring command gets the selection when synthesis is allowed (Ctrl+C with clipboard
       // restore); without it, or when that finds nothing, the clipboard stands in.
-      let clip = '';
-      let clipSource: 'selection' | 'clipboard' = 'clipboard';
-      if ((command.requires ?? []).includes('text')) {
-        const vk = triggerVkOf(settings.trigger);
-        if (PLATFORM === 'win' && settings.plugins.simulateCopy && bridge.status === 'running' && vk !== null) {
-          const sel = await grabSelection(selectionDeps(), vk).catch(() => null);
-          if (sel !== null) {
-            clip = sel;
-            clipSource = 'selection';
-          }
-        }
-        if (!clip) clip = await clipboard.readText().catch(() => '');
-      }
+      const gathered = (command.requires ?? []).includes('text') ? await gatherText() : { text: '', source: 'clipboard' as const };
+      const clip = gathered.text;
+      const clipSource = gathered.source;
       // keys runs through the same inject queue as gesture replay; run.kind delayMs between combos waits for a later host step.
       if (command.run.kind === 'keys') {
         if (PLATFORM !== 'win' || bridge.status !== 'running') return fail(t.actionUnsupported);
@@ -523,31 +558,9 @@ function start(): void {
       runScannedCommand(findCommand(scan, a.id), a);
       return;
     }
-    const def = actionById(a.id);
-    const custom = settings.actions.custom.find((item) => item.id === a.id);
-    if (!def && !custom) return;
-    const t = text();
-    const title = isPluginActionId(a.id) ? custom?.name ?? a.id : t.actionNames[a.id];
-    const at = { x: a.x, y: a.y };
-    const run = actionRuns.start(a.id, a.displayId);
-    if (!run) return;
-    if (custom || def?.feedback === 'result') {
-      overlays.actionBubble(a.displayId, { ...at, state: 'running', title, body: t.actionBubbleRunning });
-    } else {
-      overlays.clearActionBubble(a.displayId);
-    }
-    void commands.execute(a.id, { ...at, displayId: a.displayId }).then((r) => {
-      const current = actionRuns.finish(run);
-      if (quitting || !current) return;
-      if (r.ok) {
-        // An instant action that ran shows nothing: what it opened is the feedback. A result action answers in a bubble.
-        if (r.detail || custom) overlays.actionBubble(a.displayId, { ...at, state: 'done', title, body: r.detail ?? t.actionDone });
-      } else {
-        if (r.detail) console.warn(`[actions] ${a.id}: ${r.detail}`);
-        const body = r.detail === 'aborted' ? t.actionCancelled : t.actionErrors[r.error];
-        overlays.actionBubble(a.displayId, { ...at, state: 'error', title, body });
-      }
-    });
+    const builtIn = BUILT_IN_ACTIONS[a.id as BuiltinActionId];
+    if (builtIn) runBuiltInAction(a, builtIn);
+    // anything else - an old v2 'plugin:<id>' binding - was repaired away at load; ignore it
   });
 
   // Updates: only in an installed build, or in a development build pointed at a test server with LOLPING_UPDATE_TEST_URL.
@@ -1018,7 +1031,6 @@ function start(): void {
     }
     if (s.autoUpdateCheck !== previous.autoUpdateCheck) updater?.setAutoCheck(s.autoUpdateCheck);
     // Normalising rebuilds the actions object on every save, so compare what's inside, not where it lives.
-    if (JSON.stringify(s.actions) !== JSON.stringify(previous.actions)) configureActions();
     if (s.roomMuted !== previous.roomMuted) {
       syncRoomFlags();
       pushRoom();
@@ -1065,7 +1077,7 @@ function start(): void {
       list: () => {
         scan = scanPluginFolders(listFolderInputs(pluginRoot));
         pluginList = buildPluginList(scan, pluginRoot);
-        const known = (id: WheelItem): boolean => itemExists(scan, settings.actions.custom.map((a) => a.id), id);
+        const known = (id: WheelItem): boolean => itemExists(scan, id);
         const repaired = repairUnknownItems(settings.wheel, known);
         if (repaired.some((id, i) => id !== settings.wheel[i])) settings = store.update({ wheel: repaired });
         else overlays.updateSettings(overlaySettings(settings, commandIcons(pluginList))); // new icons with no settings change
@@ -1128,6 +1140,6 @@ function start(): void {
     tray.destroy();
     panels.destroy();
     overlays.destroy();
-    void Promise.allSettled([bridge.stop(), commands.unload(), sharedHost.stop(), store.flush(), lan.whenClosed(), relay.whenClosed()]).then(() => app.exit(0));
+    void Promise.allSettled([bridge.stop(), sharedHost.stop(), store.flush(), lan.whenClosed(), relay.whenClosed()]).then(() => app.exit(0));
   });
 }

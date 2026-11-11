@@ -7,7 +7,10 @@
   "author": "Danrui Meng (https://github.com/darrenprx)",
   "license": "MIT",
   "homepage": "https://github.com/darrenprx/lolPing#readme",
-  "repository": { "type": "git", "url": "https://github.com/darrenprx/lolPing.git" },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/darrenprx/lolPing.git"
+  },
   "bugs": "https://github.com/darrenprx/lolPing/issues",
   "main": "out/main/index.js",
   "scripts": {
@@ -50,12 +53,30 @@
   "build": {
     "appId": "com.lolping.app",
     "productName": "lolPing",
-    "directories": { "output": "release", "buildResources": "build" },
-    "files": ["out/**/*", "package.json"],
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "files": [
+      "out/**/*",
+      "package.json"
+    ],
     "win": {
-      "target": [{ "target": "nsis", "arch": ["x64"] }],
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
       "icon": "build/icon.ico",
-      "extraResources": [{ "from": "native/hook-helper/build/hook-helper.exe", "to": "hook-helper.exe" }]
+      "extraResources": [
+        {
+          "from": "native/hook-helper/build/hook-helper.exe",
+          "to": "hook-helper.exe"
+        }
+      ]
     },
     "nsis": {
       "oneClick": false,
@@ -66,14 +87,30 @@
     },
     "mac": {
       "minimumSystemVersion": "13.0",
-      "target": [{ "target": "dmg", "arch": ["arm64"] }],
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64"
+          ]
+        }
+      ],
       "icon": "build/icon.png",
       "category": "public.app-category.utilities",
       "identity": "-",
       "hardenedRuntime": false,
       "extraResources": [
-        { "from": "native/hook-helper/build/hook-helper", "to": "hook-helper" },
-        { "from": "build", "to": ".", "filter": ["tray*Template*.png"] }
+        {
+          "from": "native/hook-helper/build/hook-helper",
+          "to": "hook-helper"
+        },
+        {
+          "from": "build",
+          "to": ".",
+          "filter": [
+            "tray*Template*.png"
+          ]
+        }
       ],
       "extendInfo": {
         "NSAccessibilityUsageDescription": "lolPing reads the mouse and keyboard to open the ping wheel or the emote wheel when you hold its key and drag.",
@@ -81,15 +118,45 @@
         "NSLocalNetworkUsageDescription": "lolPing finds the other people in your room on the local network and sends them your pings."
       }
     },
-    "dmg": { "artifactName": "lolPing-${version}-arm64.dmg" },
-    "publish": [{ "provider": "github", "owner": "darrenprx", "repo": "lolPing" }],
+    "dmg": {
+      "artifactName": "lolPing-${version}-arm64.dmg"
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "darrenprx",
+        "repo": "lolPing"
+      }
+    ],
     "linux": {
-      "target": [{ "target": "AppImage", "arch": ["x64"] }, { "target": "deb", "arch": ["x64"] }],
+      "target": [
+        {
+          "target": "AppImage",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "deb",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
       "icon": "build/icon.png",
       "category": "Utility",
       "artifactName": "lolPing-${version}-${arch}.${ext}",
-      "extraResources": [{ "from": "native/hook-helper/build/hook-helper", "to": "hook-helper" }],
-      "desktop": { "entry": { "StartupWMClass": "lolping" } },
+      "extraResources": [
+        {
+          "from": "native/hook-helper/build/hook-helper",
+          "to": "hook-helper"
+        }
+      ],
+      "desktop": {
+        "entry": {
+          "StartupWMClass": "lolping"
+        }
+      },
       "maintainer": "lolPing contributors",
       "syncDesktopName": true
     },
@@ -109,7 +176,8 @@
       ]
     }
   },
-  "engines": { "node": ">=22.12.0" },
-  "desktopName": "lolping.desktop",
-  "dependencies": { "cordis": "4.0.0-rc.11" }
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "desktopName": "lolping.desktop"
 }

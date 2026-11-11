@@ -129,8 +129,8 @@ export function findCommand(scan: ScanResult, ref: string): { plugin: ScannedPlu
 export const scannedRefs = (scan: ScanResult): Set<string> =>
   new Set(scan.plugins.flatMap((p) => p.manifest.contributes.commands.map((c) => commandRef(p.manifest.id, c.id))));
 
-/** Whether a wheel item still exists: this is what repairUnknownItems checks refs against. */
-export function itemExists(scan: ScanResult, customActionIds: readonly string[], id: WheelItem): boolean {
+/** Whether a wheel item still exists: refs the scan provides; v2 'plugin:' ids are gone with the v2 system. */
+export function itemExists(scan: ScanResult, id: WheelItem): boolean {
   if (scannedRefs(scan).has(id)) return true;
-  return id.startsWith('plugin:') ? customActionIds.includes(id) : !id.includes('.');
+  return !id.includes('.') && !id.startsWith('plugin:');
 }
