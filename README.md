@@ -134,6 +134,10 @@ its commands and its configuration fields. Drag a command from the Wheel pool on
 item. The four built-in actions (open app, run script, explain with AI, search) are themselves one built-in plugin
 going through the same permission-checked API.
 
+PopClip extensions import: paste a snippet or Config (JSON or the usual YAML) in Settings → Actions and it
+becomes a plugin folder. URL and key-press actions convert; AppleScript, shell scripts and Shortcuts are listed as
+skipped with the reason, and a macOS-only app limit is noted but kept out of the way.
+
 Manifest commands with run kinds `url`, `open` and `keys` run directly in the app, with no process at all: a `url` command
 fills the selected text into `{text:url}` and opens the address; an `open` command starts a program with `{config.<key>}`
 placeholders filled from its settings; a `keys` command presses its key combination. For commands that need the selected

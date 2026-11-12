@@ -1,5 +1,6 @@
 import type { EmoteArt, EmoteFile, EmoteRef, ImportResult, SoundResult } from './emotes';
 import type { PluginListResult } from './commandTiles';
+import type { PopClipImportReply } from './popclipImport';
 import type { Lang } from './i18n';
 import type { PingId } from './pings';
 import type { Platform } from './platform';
@@ -188,6 +189,8 @@ export interface SettingsApi {
   /** Rescans the plugins folder and returns what it found; re-validate with parsePluginList before use. */
   getPlugins(): Promise<PluginListResult | null>;
   openPluginsFolder(): Promise<void>;
+  /** Converts pasted PopClip text into a plugin folder; re-validate with parseImportReply. */
+  importPopClip(text: string): Promise<PopClipImportReply | null>;
   openSettingsFolder(): Promise<void>;
   openProjectPage(): Promise<void>;
   retryHelper(): Promise<void>;

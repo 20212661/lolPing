@@ -531,3 +531,16 @@ behind its manifest permission: copy writes the clipboard, open goes through the
 real — the mirror of the selection grab: clipboard snapshot, write the text, synthesize Ctrl+V with the trigger
 lift, give the app 120 ms to take it, restore. `HostActions.paste` uses the same implementation. Verified in the
 built app with a python probe: streaming chunks land in the bubble, done keeps them, and the copy follow-up runs.
+
+### 16.6 PopClip import (step 8)
+
+Settings → Actions pastes a PopClip extension into a plugin folder. `popclipYaml.ts` parses it with no
+dependency: JSON straight through, or the YAML subset PopClip's Configs use (top-level pairs plus a flat
+actions list, whole-line comments, quoted values) — anything richer fails as unparseable instead of loading
+wrongly, and a parsed-but-foreign text simply converts to nothing and reports `noCommands` with the reasons.
+`importPopClipText` (pure) combines it with the contract's `fromPopClip`; the IPC handler writes the manifest
+to `plugins/<id>/plugin.json` (an existing folder is refused), rescans and pushes new icons, and the reply —
+dir, skipped with reason codes, warnings — is re-validated in the renderer and rendered through i18n. The
+imported plugin is an ordinary folder plugin from then on: same listing, same commands, remove by deleting
+the folder. Verified in the built app: a mixed snippet imports (url + keys, AppleScript skipped with its
+reason), the rescan lists the new plugin, and a repeat import answers that the folder exists.

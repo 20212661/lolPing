@@ -1,5 +1,6 @@
 import { globalShortcut, ipcMain, shell } from 'electron';
 import type { PluginListResult } from '../shared/commandTiles';
+import type { PopClipImportReply } from '../shared/popclipImport';
 import { isCustomRef, isEmoteFx, isEmoteRefShape, type CustomEmote, type EmoteRef, type ImportResult, type SoundResult } from '../shared/emotes';
 import type { Strings } from '../shared/i18n';
 import { SETTINGS_CH, type About, type AppStatus, type SetSettingsResult } from '../shared/ipc';
@@ -32,6 +33,7 @@ export interface SettingsIpcDeps {
   plugins: {
     list(): PluginListResult;
     openFolder(): Promise<void>;
+    importPopClip(text: string): PopClipImportReply;
   };
   /** Strings in the app's current language. */
   text(): Strings;
@@ -150,6 +152,8 @@ export function registerSettingsIpc(d: SettingsIpcDeps): void {
   ipcMain.handle(SETTINGS_CH.pluginsOpenFolder, async () => {
     await d.plugins.openFolder();
   });
+  ipcMain.handle(SETTINGS_CH.pluginsImportPopClip, (_e, text: unknown): PopClipImportReply =>
+    typeof text === 'string' && text.length <= 100_000 ? d.plugins.importPopClip(text.slice(0, 100_000)) : { ok: false, error: 'parse', skipped: [], warnings: [] });
   ipcMain.handle(SETTINGS_CH.openFolder, async () => {
     await shell.openPath(d.store.dir);
   });

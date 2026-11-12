@@ -2,7 +2,7 @@ import { app, ClipboardItem, clipboard, dialog, Menu, powerMonitor, screen, shel
 import { spawn, type ChildProcess } from 'node:child_process';
 import { createInterface } from 'node:readline';
 import { randomBytes, randomInt } from 'node:crypto';
-import { readFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { userInfo } from 'node:os';
 import { join } from 'node:path';
 import { isCommandRef } from '../../packages/plugin-api/src/manifest';
@@ -32,6 +32,7 @@ import { encodeSteps, tapSteps, triggerVkOf } from '../shared/keySteps';
 import { BUILT_IN_ACTIONS, BUILTIN_MANIFEST, openAppTargetKind, type BuiltInAction } from './builtInActions';
 import { buildPluginList, findCommand, itemExists, listFolderInputs, scanPluginFolders } from './pluginScan';
 import { readPluginStore, writePluginStore } from './pluginStorage';
+import { importPopClipText, type PopClipImportReply } from '../shared/popclipImport';
 import { SharedPluginHost, type HostProcess } from './sharedPluginHost';
 import { ActionRuns } from './actionRuns';
 import { resolveTarget, toShared } from './displayNumbers';
@@ -320,6 +321,15 @@ function start(): void {
     schedule: (fn, ms) => setTimeout(fn, ms),
     cancel: clearTimeout,
   });
+  /** Rescans the plugins folder, repairs the wheel against it and pushes new icons to the overlays. */
+  const refreshPlugins = (): void => {
+    scan = scanPluginFolders(listFolderInputs(pluginRoot));
+    pluginList = buildPluginList(scan, pluginRoot);
+    const known = (id: WheelItem): boolean => itemExists(scan, id);
+    const repaired = repairUnknownItems(settings.wheel, known);
+    if (repaired.some((id, i) => id !== settings.wheel[i])) settings = store.update({ wheel: repaired });
+    else overlays.updateSettings(overlaySettings(settings, commandIcons(pluginList)));
+  };
   /** The OS abilities selectionGrab needs, wired to this app's clipboard and helper bridge. */
   const selectionDeps = (): SelectionDeps => ({
     tap: (steps) => bridge.tap(steps),
@@ -1075,16 +1085,25 @@ function start(): void {
     platform: PLATFORM,
     plugins: {
       list: () => {
-        scan = scanPluginFolders(listFolderInputs(pluginRoot));
-        pluginList = buildPluginList(scan, pluginRoot);
-        const known = (id: WheelItem): boolean => itemExists(scan, id);
-        const repaired = repairUnknownItems(settings.wheel, known);
-        if (repaired.some((id, i) => id !== settings.wheel[i])) settings = store.update({ wheel: repaired });
-        else overlays.updateSettings(overlaySettings(settings, commandIcons(pluginList))); // new icons with no settings change
+        refreshPlugins();
         return pluginList;
       },
       openFolder: async () => {
         await shell.openPath(pluginRoot);
+      },
+      importPopClip: (text: string): PopClipImportReply => {
+        const outcome = importPopClipText(text, 'popclip-import');
+        if (!outcome.ok) return { ok: false, error: outcome.error, skipped: outcome.skipped, warnings: [] };
+        const { manifest, skipped, warnings } = outcome.conversion;
+        const dir = join(pluginRoot, manifest.id);
+        if (existsSync(join(dir, 'plugin.json'))) {
+          return { ok: false, error: 'exists', dir: manifest.id, skipped: [], warnings: [] };
+        }
+        mkdirSync(dir, { recursive: true });
+        writeFileSync(join(dir, 'plugin.json'), `${JSON.stringify(manifest, null, 2)}
+`, 'utf8');
+        refreshPlugins();
+        return { ok: true, dir: manifest.id, skipped, warnings };
       },
     },
     update: updater

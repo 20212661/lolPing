@@ -4,6 +4,7 @@ import { useEffect, useState, type KeyboardEvent } from 'react';
 import type { ManifestErrorCode } from '../../../../packages/plugin-api/src/validate';
 import type { ActionsSettings } from '../../../shared/actionCatalog';
 import type { PluginListResult } from '../../../shared/commandTiles';
+import { parseImportReply, type PopClipImportReply } from '../../../shared/popclipImport';
 import type { Settings } from '../../../shared/settings';
 import { api } from '../api';
 import { useText } from '../text';
@@ -80,6 +81,19 @@ export function ActionsSection(
   },
 ) {
   const t = useText();
+  const [importText, setImportText] = useState('');
+  const [importReply, setImportReply] = useState<PopClipImportReply | null>(null);
+  const doImport = (): void => {
+    void api.importPopClip(importText).then((raw) => {
+      const reply = parseImportReply(raw);
+      if (!reply) return;
+      setImportReply(reply);
+      if (reply.ok) {
+        setImportText('');
+        onRefreshPlugins();
+      }
+    });
+  };
   const set = (patch: Partial<ActionsSettings>): void => {
     void update({ actions: { ...s.actions, ...patch } });
   };
@@ -132,6 +146,45 @@ export function ActionsSection(
       {plugins !== null && plugins.plugins.length === 0 && plugins.failures.length === 0 ? (
         <p className="desc">{t.pluginsNone}</p>
       ) : null}
+      <div className="card pluginFields">
+        <label>
+          {t.pluginsImportTitle}
+          <textarea className="pluginConfigArea" value={importText} spellCheck={false}
+            placeholder={t.pluginsImportPlaceholder} onChange={(e) => setImportText(e.target.value)} />
+        </label>
+        <div className="pluginButtons">
+          <Button disabled={!importText.trim()} onClick={doImport}>{t.pluginsImportButton}</Button>
+          {importReply ? (
+            <span className={`desc ${importReply.ok ? '' : 'importFailed'}`}>
+              {importReply.ok
+                ? t.pluginsImported(importReply.dir ?? '')
+                : importReply.error === 'exists'
+                  ? t.pluginsImportExists(importReply.dir ?? '')
+                  : importReply.error === 'parse' ? t.pluginsImportParse : t.pluginsImportNoCommands}
+            </span>
+          ) : null}
+        </div>
+        {importReply && (importReply.skipped.length > 0 || importReply.warnings.length > 0) ? (
+          <div>
+            {importReply.skipped.length > 0 ? (
+              <>
+                <div className="pluginConfigTitle">{t.pluginsImportSkipped}</div>
+                <ul className="pluginErrorList">
+                  {importReply.skipped.map((x, i) => <li key={i}>{x.title}: {t.popclipSkip[x.reason as keyof typeof t.popclipSkip] ?? x.reason}</li>)}
+                </ul>
+              </>
+            ) : null}
+            {importReply.warnings.length > 0 ? (
+              <>
+                <div className="pluginConfigTitle">{t.pluginsImportWarnings}</div>
+                <ul className="pluginErrorList">
+                  {importReply.warnings.map((x, i) => <li key={i}>{x.title}: {t.popclipWarn[x.reason as keyof typeof t.popclipWarn] ?? x.reason}</li>)}
+                </ul>
+              </>
+            ) : null}
+          </div>
+        ) : null}
+      </div>
       {plugins?.failures.map((f) => (
         <div className="card pluginFields" key={f.dir}>
           <div className="pluginHead"><b>{f.dir}</b><span className="desc">{t.pluginsInvalid}</span></div>

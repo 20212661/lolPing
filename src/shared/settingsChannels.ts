@@ -15,6 +15,7 @@ export const SETTINGS_CH = {
   about: 'app:about',
   pluginsList: 'plugins:list',
   pluginsOpenFolder: 'plugins:openFolder',
+  pluginsImportPopClip: 'plugins:importPopClip',
   openFolder: 'app:openSettingsFolder',
   openProject: 'app:openProjectPage',
   retryHelper: 'app:retryHelper',

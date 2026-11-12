@@ -26,6 +26,7 @@ const api: SettingsApi = {
   getAbout: () => ipcRenderer.invoke(SETTINGS_CH.about),
   getPlugins: () => ipcRenderer.invoke(SETTINGS_CH.pluginsList),
   openPluginsFolder: () => ipcRenderer.invoke(SETTINGS_CH.pluginsOpenFolder),
+  importPopClip: (text) => ipcRenderer.invoke(SETTINGS_CH.pluginsImportPopClip, text),
   openSettingsFolder: () => ipcRenderer.invoke(SETTINGS_CH.openFolder),
   openProjectPage: () => ipcRenderer.invoke(SETTINGS_CH.openProject),
   retryHelper: () => ipcRenderer.invoke(SETTINGS_CH.retryHelper),
