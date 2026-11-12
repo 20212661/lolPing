@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { PluginManifest } from '../../packages/plugin-api/src/manifest';
-import { openSecret, publicConfig, SEALED_PREFIX, sealSecrets, secretKeys, type Sealer } from '../../src/main/pluginSecrets';
+import { openSecret, publicConfig, SEALED_PREFIX, sealAiKey, sealSecrets, secretKeys, type Sealer } from '../../src/main/pluginSecrets';
 
 const manifest = {
   id: 'ai', name: 'AI', version: '1.0.0', engines: { lolping: '^1.0.0' },
@@ -58,5 +58,27 @@ describe('pluginSecrets', () => {
     expect(openSecret(`${SEALED_PREFIX}${Buffer.from('junk').toString('base64')}`, sealer())).toBeUndefined();
     expect(openSecret('', sealer())).toBeUndefined();
     expect(openSecret(42, sealer())).toBeUndefined();
+  });
+});
+
+describe('sealAiKey', () => {
+  it('seals a plain key once and opens it back', () => {
+    const s = sealer();
+    const sealed = sealAiKey('sk-live', s);
+    expect(sealed).toMatch(new RegExp(`^${SEALED_PREFIX}`));
+    expect(openSecret(sealed, s)).toBe('sk-live');
+  });
+
+  it('leaves an already-sealed key, an empty (cleared) key and non-strings alone', () => {
+    const s = sealer();
+    const sealed = sealAiKey('sk-live', s);
+    expect(sealAiKey(sealed, s)).toBeUndefined();
+    expect(sealAiKey('', s)).toBeUndefined(); // clearing writes '', which must never become ciphertext
+    expect(sealAiKey(undefined, s)).toBeUndefined();
+    expect(sealAiKey(42, s)).toBeUndefined();
+  });
+
+  it('does nothing when the OS cannot encrypt', () => {
+    expect(sealAiKey('sk-live', sealer(false))).toBeUndefined();
   });
 });

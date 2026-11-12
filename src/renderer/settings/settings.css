@@ -174,3 +174,4 @@ main.content { overflow: auto; padding: 4px 28px 28px 20px; }
 [data-platform="linux"] .app { grid-template-rows: 1fr; }
 [data-platform="linux"] .titlebar { display: none; }
 [data-platform="linux"] body { font-family: system-ui, sans-serif; }
+.secretRow { display: flex; gap: 8px; align-items: center; }

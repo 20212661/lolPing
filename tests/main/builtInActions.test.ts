@@ -1,4 +1,6 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+
+afterEach(() => vi.unstubAllGlobals());
 import type { Invocation } from '../../packages/plugin-api/src/api';
 import { BUILT_IN_ACTIONS, BUILTIN_MANIFEST, explainRequest, openAppTargetKind, parseExplainAnswer, searchUrlFor } from '../../src/main/builtInActions';
 
@@ -105,5 +107,26 @@ describe('BUILT_IN_ACTIONS handlers', () => {
       .resolves.toEqual({ ok: false, error: 'unconfigured' });
     await expect(BUILT_IN_ACTIONS['ai-explain'].handler(inv({ config: { baseUrl: 'https://x.com', apiKey: 'k', model: 'm' } })))
       .resolves.toEqual({ ok: false, error: 'noText' });
+  });
+});
+
+describe('ai-explain over the wire', () => {
+  const cfg = { baseUrl: 'https://api.x.com/v1', apiKey: 'sk-live', model: 'm1' };
+
+  it('sends the (decrypted) key as the bearer token and shows the answer', async () => {
+    const seen: Array<{ url: string; auth: string }> = [];
+    vi.stubGlobal('fetch', async (url: string, init: RequestInit) => {
+      seen.push({ url: String(url), auth: String(init.headers?.authorization) });
+      return new Response(JSON.stringify({ choices: [{ message: { content: ' the answer ' } }] }), { status: 200 });
+    });
+    const r = await BUILT_IN_ACTIONS['ai-explain'].handler(inv({ config: cfg, text: 'hi', textSource: 'clipboard' }));
+    expect(r).toEqual({ ok: true, detail: 'the answer' });
+    expect(seen).toEqual([{ url: 'https://api.x.com/v1/chat/completions', auth: 'Bearer sk-live' }]);
+  });
+
+  it('answers unconfigured again once the saved key has been cleared', async () => {
+    // Clearing writes ''; the config layer turns that into an empty string, exactly as after openSecret('').
+    const r = await BUILT_IN_ACTIONS['ai-explain'].handler(inv({ config: { ...cfg, apiKey: '' }, text: 'hi', textSource: 'clipboard' }));
+    expect(r).toEqual({ ok: false, error: 'unconfigured' });
   });
 });

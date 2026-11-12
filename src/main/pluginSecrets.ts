@@ -82,3 +82,14 @@ export function openSecret(value: unknown, sealer: Sealer): string | undefined {
     return undefined; // sealed by another user or machine: treat as not configured
   }
 }
+
+/**
+ * The built-in AI explain action's API key, sealed by the same rules: plain text in, sealed out,
+ * undefined when there is nothing to do (empty, already sealed, or no OS encryption). The key keeps
+ * living in settings.actions.aiExplain.apiKey; only its stored form changes.
+ */
+export function sealAiKey(key: unknown, sealer: Sealer): string | undefined {
+  if (!sealer.available()) return undefined;
+  if (typeof key !== 'string' || key === '' || isSealed(key)) return undefined;
+  return SEALED_PREFIX + sealer.seal(key);
+}

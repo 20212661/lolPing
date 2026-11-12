@@ -48,10 +48,10 @@ beforeEach(() => {
 });
 
 /** Registers the handlers again, with or without an update checker. */
-function registerWith(update?: SettingsIpcDeps['update']): void {
+function registerWith(update?: SettingsIpcDeps['update'], sealPatch?: SettingsIpcDeps['sealPatch']): void {
   h.handlers.clear();
   registerSettingsIpc({
-    store, library, text: () => strings('en'), platform: 'win', room: {}, update,
+    store, library, text: () => strings('en'), platform: 'win', room: {}, update, sealPatch,
   } as unknown as SettingsIpcDeps);
 }
 
@@ -246,5 +246,22 @@ describe('update IPC', () => {
     registerWith(fakeUpdate(AVAILABLE, 'file:///C:/Windows/System32/calc.exe'));
     await call(SETTINGS_CH.updateOpenRelease);
     expect(h.opened).toEqual(['https://github.com/darrenprx/lolPing/releases/latest']);
+  });
+});
+
+describe('secret sealing on save', () => {
+  it('runs the seal hook over an ai-explain patch before it is stored', async () => {
+    let seen: unknown;
+    registerWith(undefined, (patch) => {
+      seen = patch;
+      const key = (patch as { actions?: { aiExplain?: { apiKey?: string } } }).actions?.aiExplain?.apiKey;
+      return key === 'sk-plain'
+        ? { ...patch, actions: { ...(patch as { actions: object }).actions, aiExplain: { baseUrl: 'https://api.openai.com/v1', apiKey: 'sk-sealed', model: 'gpt-4o-mini' } } }
+        : patch;
+    });
+    const result = await call(SETTINGS_CH.set, { actions: { openApp: { target: '' }, runScript: { command: '' }, aiExplain: { baseUrl: 'https://api.openai.com/v1', apiKey: 'sk-plain', model: 'gpt-4o-mini' }, clipboardSearch: { url: 'https://www.bing.com/search?q=%s' } } });
+    expect(result).toMatchObject({ ok: true });
+    expect(seen).toBeDefined();
+    expect(store.get().actions.aiExplain.apiKey).toBe('sk-sealed'); // the sealed value, not the typed one
   });
 });

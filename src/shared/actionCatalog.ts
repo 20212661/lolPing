@@ -125,7 +125,7 @@ export function normalizeActions(raw: unknown): ActionsSettings {
     runScript: { command: str(runScript.command, 1024, d.runScript.command) },
     aiExplain: {
       baseUrl: httpStr(ai.baseUrl, 512, d.aiExplain.baseUrl),
-      apiKey: str(ai.apiKey, 256, d.aiExplain.apiKey),
+      apiKey: str(ai.apiKey, 1024, d.aiExplain.apiKey), // sealed values are longer than plain ones
       model: str(ai.model, 128, d.aiExplain.model),
     },
     clipboardSearch: { url: httpStr(search.url, 1024, d.clipboardSearch.url) },

@@ -38,11 +38,17 @@ function ActionInput(props: { value: string; width?: number; password?: boolean;
 function ConfigField(props: { prop: PluginListResult['plugins'][number]['configuration'][number]; value: unknown; savedSecretHint: string; onSave(v: string | number | boolean): void }) {
   const { prop, value } = props;
   if (prop.type === 'secret') {
+    const t = useText();
     // A stored secret is ciphertext: never put it in the box (a stray keystroke would corrupt it).
     const stored = typeof value === 'string' && value !== '';
     return (
-      <label>{prop.title}<ActionInput value="" password placeholder={stored ? props.savedSecretHint : undefined}
-        onSave={(v) => { if (v) props.onSave(v); }} /></label>
+      <label>{prop.title}
+        <div className="secretRow">
+          <ActionInput value="" password placeholder={stored ? props.savedSecretHint : undefined}
+            onSave={(v) => { if (v) props.onSave(v); }} />
+          {stored ? <Button onClick={() => props.onSave('')}>{t.pluginSecretClear}</Button> : null}
+        </div>
+      </label>
     );
   }
   const asText = String(value ?? prop.default ?? '');
@@ -127,7 +133,11 @@ export function ActionsSection(
         </label>
         <label>
           {t.actionAiKey}
-          <ActionInput value={aiExplain.apiKey} password width={220} onSave={(apiKey) => set({ aiExplain: { ...aiExplain, apiKey } })} />
+          <div className="secretRow">
+            <ActionInput value="" password width={220} placeholder={aiExplain.apiKey ? t.pluginSecretSaved : undefined}
+              onSave={(apiKey) => { if (apiKey) set({ aiExplain: { ...aiExplain, apiKey } }); }} />
+            {aiExplain.apiKey ? <Button onClick={() => set({ aiExplain: { ...aiExplain, apiKey: '' } })}>{t.pluginSecretClear}</Button> : null}
+          </div>
         </label>
         <label>
           {t.actionAiModel}

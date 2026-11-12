@@ -33,7 +33,7 @@ import { BUILT_IN_ACTIONS, BUILTIN_MANIFEST, openAppTargetKind, type BuiltInActi
 import { buildPluginList, findCommand, itemExists, listFolderInputs, scanPluginFolders } from './pluginScan';
 import { moveLegacyPluginData, pluginDataDirIn, readPluginStore, writePluginStore } from './pluginStorage';
 import type { PluginManifest } from '../../packages/plugin-api/src/manifest';
-import { openSecret, publicConfig, sealSecrets, type Sealer } from './pluginSecrets';
+import { openSecret, publicConfig, sealAiKey, sealSecrets, type Sealer } from './pluginSecrets';
 import { importPopClipText, type PopClipImportReply } from '../shared/popclipImport';
 import { SharedPluginHost, type HostProcess } from './sharedPluginHost';
 import { ActionRuns } from './actionRuns';
@@ -172,10 +172,15 @@ function start(): void {
   };
   const manifestOf = (pluginId: string): PluginManifest | undefined =>
     scan.plugins.find((p) => p.manifest.id === pluginId)?.manifest;
-  /** Seals plain secrets already in settings.json (written before sealing existed, or before the plugin was scanned). */
+  /** Seals plain secrets already in settings.json: plugin secrets and the built-in AI key. */
   const sealStoredSecrets = (): void => {
-    const sealed = sealSecrets(settings.plugins.configs, manifestOf, secretSealer);
-    if (sealed !== settings.plugins.configs) settings = store.update({ plugins: { ...settings.plugins, configs: sealed } });
+    const sealedConfigs = sealSecrets(settings.plugins.configs, manifestOf, secretSealer);
+    const sealedKey = sealAiKey(settings.actions.aiExplain.apiKey, secretSealer);
+    if (sealedConfigs === settings.plugins.configs && sealedKey === undefined) return;
+    settings = store.update({
+      ...(sealedConfigs !== settings.plugins.configs ? { plugins: { ...settings.plugins, configs: sealedConfigs } } : {}),
+      ...(sealedKey !== undefined ? { actions: { ...settings.actions, aiExplain: { ...settings.actions.aiExplain, apiKey: sealedKey } } } : {}),
+    });
   };
   sealStoredSecrets();
   /** Runs one validated host action for a plugin, after its permission check. */
@@ -405,7 +410,8 @@ function start(): void {
   };
   const builtInConfig = (id: BuiltinActionId): Record<string, unknown> => {
     const a = settings.actions;
-    if (id === 'ai-explain') return { ...a.aiExplain };
+    // The stored key may be sealed (pluginSecrets.ts); the handler sees plain text, '' when unset.
+    if (id === 'ai-explain') return { ...a.aiExplain, apiKey: openSecret(a.aiExplain.apiKey, secretSealer) ?? '' };
     if (id === 'open-app') return { ...a.openApp };
     if (id === 'run-script') return { ...a.runScript };
     return { ...a.clipboardSearch };
@@ -1078,9 +1084,18 @@ function start(): void {
 
   registerSettingsIpc({
     store,
-    sealPatch: (patch) => (patch.plugins
-      ? { ...patch, plugins: { ...patch.plugins, configs: sealSecrets(patch.plugins.configs, manifestOf, secretSealer) } }
-      : patch),
+    sealPatch: (patch) => {
+      let next = patch;
+      if (patch.plugins) next = { ...next, plugins: { ...patch.plugins, configs: sealSecrets(patch.plugins.configs, manifestOf, secretSealer) } };
+      const typedKey = patch.actions?.aiExplain?.apiKey;
+      if (typeof typedKey === 'string') {
+        const sealedKey = sealAiKey(typedKey, secretSealer);
+        if (sealedKey !== undefined && patch.actions) {
+          next = { ...next, actions: { ...patch.actions, aiExplain: { ...patch.actions.aiExplain, apiKey: sealedKey } } };
+        }
+      }
+      return next;
+    },
     library,
     getStatus: status,
     setEnabled,
