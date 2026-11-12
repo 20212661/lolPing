@@ -14,7 +14,9 @@
 
 import type { PluginManifest } from '../../packages/plugin-api/src/manifest';
 
-export const SEALED_PREFIX = 'sealed:v1:';
+import { isSealed, SEALED_PREFIX } from '../shared/sealedSecret';
+
+export { isSealed, SEALED_PREFIX };
 
 type Values = Record<string, string | number | boolean>;
 
@@ -42,8 +44,6 @@ export function publicConfig(manifest: PluginManifest | undefined, values: Value
   }
   return out;
 }
-
-export const isSealed = (v: unknown): v is string => typeof v === 'string' && v.startsWith(SEALED_PREFIX);
 
 /**
  * Encrypts every secret value that is not sealed yet. Returns the same object when nothing changed, so

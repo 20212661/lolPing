@@ -256,7 +256,7 @@ describe('secret sealing on save', () => {
       seen = patch;
       const key = (patch as { actions?: { aiExplain?: { apiKey?: string } } }).actions?.aiExplain?.apiKey;
       return key === 'sk-plain'
-        ? { ...patch, actions: { ...(patch as { actions: object }).actions, aiExplain: { baseUrl: 'https://api.openai.com/v1', apiKey: 'sk-sealed', model: 'gpt-4o-mini' } } }
+        ? { ...patch, actions: { ...(patch as { actions: object }).actions, aiExplain: { baseUrl: 'https://api.openai.com/v1', apiKey: 'sk-sealed', model: 'gpt-4o-mini' } } } as typeof patch
         : patch;
     });
     const result = await call(SETTINGS_CH.set, { actions: { openApp: { target: '' }, runScript: { command: '' }, aiExplain: { baseUrl: 'https://api.openai.com/v1', apiKey: 'sk-plain', model: 'gpt-4o-mini' }, clipboardSearch: { url: 'https://www.bing.com/search?q=%s' } } });

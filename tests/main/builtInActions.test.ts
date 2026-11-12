@@ -116,7 +116,7 @@ describe('ai-explain over the wire', () => {
   it('sends the (decrypted) key as the bearer token and shows the answer', async () => {
     const seen: Array<{ url: string; auth: string }> = [];
     vi.stubGlobal('fetch', async (url: string, init: RequestInit) => {
-      seen.push({ url: String(url), auth: String(init.headers?.authorization) });
+      seen.push({ url: String(url), auth: String((init.headers as Record<string, string> | undefined)?.authorization) });
       return new Response(JSON.stringify({ choices: [{ message: { content: ' the answer ' } }] }), { status: 200 });
     });
     const r = await BUILT_IN_ACTIONS['ai-explain'].handler(inv({ config: cfg, text: 'hi', textSource: 'clipboard' }));

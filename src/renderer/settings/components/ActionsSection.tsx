@@ -1,4 +1,5 @@
 import { Button, Dropdown, Input, Option, Switch } from '@fluentui/react-components';
+import { isSealed } from '../../../shared/sealedSecret';
 import { ClipboardPasteRegular, CodeRegular, OpenRegular, SearchRegular, SparkleRegular } from '@fluentui/react-icons';
 import { useEffect, useState, type KeyboardEvent } from 'react';
 import type { ManifestErrorCode } from '../../../../packages/plugin-api/src/validate';
@@ -34,23 +35,26 @@ function ActionInput(props: { value: string; width?: number; password?: boolean;
   );
 }
 
+/**
+ * A saved secret's box: always empty (the stored value may be ciphertext, and a stray keystroke would
+ * corrupt it), a placeholder saying whether it is saved and whether the OS encrypted it, and Clear.
+ */
+function SecretInput(props: { value: unknown; width?: number; onSave(v: string): void }) {
+  const t = useText();
+  const stored = typeof props.value === 'string' && props.value !== '';
+  const hint = !stored ? undefined : isSealed(props.value) ? t.pluginSecretSaved : t.pluginSecretSavedPlain;
+  return (
+    <div className="secretRow">
+      <ActionInput value="" password width={props.width} placeholder={hint} onSave={(v) => { if (v) props.onSave(v); }} />
+      {stored ? <Button onClick={() => props.onSave('')}>{t.pluginSecretClear}</Button> : null}
+    </div>
+  );
+}
+
 /** One configuration entry of a scanned plugin, as the control its type calls for. */
-function ConfigField(props: { prop: PluginListResult['plugins'][number]['configuration'][number]; value: unknown; savedSecretHint: string; onSave(v: string | number | boolean): void }) {
+function ConfigField(props: { prop: PluginListResult['plugins'][number]['configuration'][number]; value: unknown; onSave(v: string | number | boolean): void }) {
   const { prop, value } = props;
-  if (prop.type === 'secret') {
-    const t = useText();
-    // A stored secret is ciphertext: never put it in the box (a stray keystroke would corrupt it).
-    const stored = typeof value === 'string' && value !== '';
-    return (
-      <label>{prop.title}
-        <div className="secretRow">
-          <ActionInput value="" password placeholder={stored ? props.savedSecretHint : undefined}
-            onSave={(v) => { if (v) props.onSave(v); }} />
-          {stored ? <Button onClick={() => props.onSave('')}>{t.pluginSecretClear}</Button> : null}
-        </div>
-      </label>
-    );
-  }
+  if (prop.type === 'secret') return <label>{prop.title}<SecretInput value={value} onSave={props.onSave} /></label>;
   const asText = String(value ?? prop.default ?? '');
   if (prop.type === 'boolean') {
     return <Switch label={prop.title} checked={value === true} onChange={(_, d) => props.onSave(d.checked)} />;
@@ -133,11 +137,7 @@ export function ActionsSection(
         </label>
         <label>
           {t.actionAiKey}
-          <div className="secretRow">
-            <ActionInput value="" password width={220} placeholder={aiExplain.apiKey ? t.pluginSecretSaved : undefined}
-              onSave={(apiKey) => { if (apiKey) set({ aiExplain: { ...aiExplain, apiKey } }); }} />
-            {aiExplain.apiKey ? <Button onClick={() => set({ aiExplain: { ...aiExplain, apiKey: '' } })}>{t.pluginSecretClear}</Button> : null}
-          </div>
+          <SecretInput value={aiExplain.apiKey} width={220} onSave={(apiKey) => set({ aiExplain: { ...aiExplain, apiKey } })} />
         </label>
         <label>
           {t.actionAiModel}
@@ -234,7 +234,6 @@ export function ActionsSection(
                   key={prop.key}
                   prop={prop}
                   value={(s.plugins.configs[p.id] ?? {})[prop.key]}
-                  savedSecretHint={t.pluginSecretSaved}
                   onSave={(v) => setPluginValue(p.id, prop.key, v)}
                 />
               ))}
