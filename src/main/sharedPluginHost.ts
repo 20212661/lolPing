@@ -24,8 +24,12 @@ export type HostActionRunner = (method: string, args: unknown[]) => Promise<unkn
 
 export interface SharedHostDeps {
   launch(): HostProcess;
-  /** Executes a validated host action for `pluginId`; rejects when the plugin lacks the permission. */
-  execute(pluginId: string, method: string, args: unknown[]): Promise<unknown>;
+  /**
+   * Executes a validated host action for `pluginId`; rejects when the plugin lacks the permission.
+   * `signal` belongs to the invocation that asked, aborted the moment it settles (done, timeout,
+   * restart): long-running actions such as exec stop with it.
+   */
+  execute(pluginId: string, method: string, args: unknown[], signal?: AbortSignal): Promise<unknown>;
   /** The plugin's manifest, entry path and config for a load; null when the scan no longer has it. */
   resolve(pluginId: string): { manifest: PluginManifest; entry: string; pluginPath: string; config: Record<string, unknown>; storage: Array<[string, unknown]> } | null;
   log(pluginId: string, level: 'info' | 'warn' | 'error', text: string): void;
@@ -55,6 +59,8 @@ interface ActiveInvoke {
   id: number;
   pluginId: string;
   resolve(result: ParsedResult): void;
+  /** Aborted when the invocation settles, however it settles. */
+  abort: AbortController;
   coalescer: ResultCoalescer | null;
   timer: ReturnType<typeof setTimeout>;
   process: HostProcess | null; // the process it started on, for restart scoping
@@ -240,8 +246,14 @@ export class SharedPluginHost {
 
   /** `owned` is the process a one-shot invocation owns (killed when it settles); null means shared. */
   private dispatch(proc: HostProcess, req: InvokeRequest, events: InvokeEvents | undefined, owned: HostProcess | null): Promise<ParsedResult> {
-    return new Promise((resolve) => {
+    return new Promise((settle) => {
       const id = ++this.seq;
+      // Every settle path goes through resolve: the abort reaches whatever the invocation started.
+      const abort = new AbortController();
+      const resolve = (result: ParsedResult): void => {
+        abort.abort();
+        settle(result);
+      };
       const coalescer = events
         ? new ResultCoalescer(33, (text) => events.onText(text), this.deps.schedule, this.deps.cancel)
         : null;
@@ -261,7 +273,7 @@ export class SharedPluginHost {
       }, req.timeoutMs);
       const info = this.deps.resolve(req.pluginId);
       this.active.set(id, {
-        id, pluginId: req.pluginId, resolve, coalescer, timer, process: owned,
+        id, pluginId: req.pluginId, resolve, abort, coalescer, timer, process: owned,
       });
       proc.postMessage({
         t: 'invoke', id, pluginId: req.pluginId, command: req.command, handler: req.handler,
@@ -362,7 +374,7 @@ export class SharedPluginHost {
           proc.postMessage({ t: 'reply', callId: msg.callId, ok: false, error: 'the invocation has ended' });
           return;
         }
-        void this.deps.execute(msg.pluginId, msg.method, msg.args).then(
+        void this.deps.execute(msg.pluginId, msg.method, msg.args, inv?.abort.signal).then(
           (value) => proc.postMessage({ t: 'reply', callId: msg.callId, ok: true, value }),
           (err: unknown) => proc.postMessage({ t: 'reply', callId: msg.callId, ok: false, error: String(err).slice(0, 2000) }),
         );

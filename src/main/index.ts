@@ -1,4 +1,4 @@
-import { app, ClipboardItem, clipboard, dialog, Menu, powerMonitor, screen, shell, systemPreferences, utilityProcess } from 'electron';
+import { app, ClipboardItem, clipboard, dialog, Menu, powerMonitor, safeStorage, screen, shell, systemPreferences, utilityProcess } from 'electron';
 import { spawn, type ChildProcess } from 'node:child_process';
 import { createInterface } from 'node:readline';
 import { randomBytes, randomInt } from 'node:crypto';
@@ -26,12 +26,14 @@ import { parseTextInput } from '../shared/textCommands';
 import { updateErrorText, type UpdateState } from '../shared/update';
 import { registerAppScheme, serveAppScheme } from './appProtocol';
 import { fillPlaceholders, runDeclarative } from './declarativeRun';
-import { runExecCommand, type ExecChild, type ExecDeps, type ThenAction } from './execRun';
+import { resolveExecFile, runExecCommand, runHostExec, type ExecChild, type ExecDeps, type ThenAction } from './execRun';
 import { grabSelection, pasteText, type SelectionDeps } from './selectionGrab';
 import { encodeSteps, tapSteps, triggerVkOf } from '../shared/keySteps';
 import { BUILT_IN_ACTIONS, BUILTIN_MANIFEST, openAppTargetKind, type BuiltInAction } from './builtInActions';
 import { buildPluginList, findCommand, itemExists, listFolderInputs, scanPluginFolders } from './pluginScan';
-import { readPluginStore, writePluginStore } from './pluginStorage';
+import { moveLegacyPluginData, pluginDataDirIn, readPluginStore, writePluginStore } from './pluginStorage';
+import type { PluginManifest } from '../../packages/plugin-api/src/manifest';
+import { openSecret, publicConfig, sealSecrets, type Sealer } from './pluginSecrets';
 import { importPopClipText, type PopClipImportReply } from '../shared/popclipImport';
 import { SharedPluginHost, type HostProcess } from './sharedPluginHost';
 import { ActionRuns } from './actionRuns';
@@ -125,6 +127,9 @@ function start(): void {
   if (kept.length !== settings.customEmotes.length) settings = store.update({ customEmotes: kept });
   // The plugin folder scan: wheel command refs resolve against it, and its icons ride along to the overlays.
   const pluginRoot = join(settingsDir(), 'plugins');
+  // Plugin stores live beside the plugins folder; an earlier build kept them inside it, where the scan saw them.
+  const pluginDataDir = pluginDataDirIn(settingsDir());
+  moveLegacyPluginData(pluginRoot, pluginDataDir);
   let scan = scanPluginFolders(listFolderInputs(pluginRoot));
   let pluginList = buildPluginList(scan, pluginRoot);
   const itemKnown = (id: WheelItem): boolean => itemExists(scan, id);
@@ -151,9 +156,30 @@ function start(): void {
 
   const actionRuns = new ActionRuns();
   // The shared plugin host: js commands from scanned plugins run here (packages/plugin-api protocol).
-  const pluginDataDir = join(pluginRoot, 'data');
+  /** Secrets are sealed with the OS (DPAPI / Keychain) when it can; see pluginSecrets.ts. */
+  let warnedNoSealer = false;
+  const secretSealer: Sealer = {
+    available: () => {
+      const ok = safeStorage.isEncryptionAvailable();
+      if (!ok && !warnedNoSealer) {
+        warnedNoSealer = true;
+        console.warn('[plugins] OS encryption unavailable: plugin secrets stay in plain text');
+      }
+      return ok;
+    },
+    seal: (plain) => safeStorage.encryptString(plain).toString('base64'),
+    open: (sealed) => safeStorage.decryptString(Buffer.from(sealed, 'base64')),
+  };
+  const manifestOf = (pluginId: string): PluginManifest | undefined =>
+    scan.plugins.find((p) => p.manifest.id === pluginId)?.manifest;
+  /** Seals plain secrets already in settings.json (written before sealing existed, or before the plugin was scanned). */
+  const sealStoredSecrets = (): void => {
+    const sealed = sealSecrets(settings.plugins.configs, manifestOf, secretSealer);
+    if (sealed !== settings.plugins.configs) settings = store.update({ plugins: { ...settings.plugins, configs: sealed } });
+  };
+  sealStoredSecrets();
   /** Runs one validated host action for a plugin, after its permission check. */
-  const executeHostAction = async (pluginId: string, method: string, args: unknown[]): Promise<unknown> => {
+  const executeHostAction = async (pluginId: string, method: string, args: unknown[], signal?: AbortSignal): Promise<unknown> => {
     const manifest = pluginId === BUILTIN_MANIFEST.id
       ? BUILTIN_MANIFEST
       : scan.plugins.find((p) => p.manifest.id === pluginId)?.manifest;
@@ -192,8 +218,14 @@ function start(): void {
         if (!spawnCommand(target, extra)) throw new Error('could not start');
         return undefined;
       }
-      case 'exec':
-        return execBounded(String(args[0] ?? ''), Array.isArray(args[1]) ? (args[1] as unknown[]).map(String) : []);
+      case 'exec': {
+        const opts = (typeof args[2] === 'object' && args[2] !== null ? args[2] : {}) as Record<string, unknown>;
+        return runHostExec(String(args[0] ?? ''), Array.isArray(args[1]) ? (args[1] as unknown[]).map(String) : [], {
+          stdin: typeof opts.stdin === 'string' ? opts.stdin : undefined,
+          cwd: typeof opts.cwd === 'string' ? opts.cwd : undefined,
+          signal,
+        });
+      }
       case 'notify': {
         const body = String(args[0] ?? '').slice(0, 200);
         if (body) overlays.toast(manifest?.name ?? pluginId, body);
@@ -201,8 +233,7 @@ function start(): void {
       }
       case 'secrets.get': {
         const key = String(args[0] ?? '');
-        const value = settings.plugins.configs[pluginId]?.[key];
-        return typeof value === 'string' ? value : undefined;
+        return openSecret(settings.plugins.configs[pluginId]?.[key], secretSealer);
       }
       case 'storage.set': {
         const key = String(args[0] ?? '');
@@ -222,25 +253,6 @@ function start(): void {
         throw new Error(`unknown host action: ${method}`);
     }
   };
-  /** exec, bounded: output capped, the process killed when the plugin's invocation dies with it. */
-  const execBounded = (file: string, args: string[]): Promise<{ code: number; stdout: string; stderr: string }> =>
-    new Promise((resolve) => {
-      if (!file) {
-        resolve({ code: -1, stdout: '', stderr: 'no file' });
-        return;
-      }
-      try {
-        const child = spawn(file, args, { windowsHide: true });
-        let stdout = '';
-        let stderr = '';
-        child.stdout?.on('data', (d: Buffer) => { if (stdout.length < 100_000) stdout += d.toString().slice(0, 100_000 - stdout.length); });
-        child.stderr?.on('data', (d: Buffer) => { if (stderr.length < 20_000) stderr += d.toString().slice(0, 20_000 - stderr.length); });
-        child.on('error', (err) => resolve({ code: -1, stdout, stderr: stderr + String(err) }));
-        child.on('close', (code) => resolve({ code: code ?? -1, stdout, stderr }));
-      } catch (err) {
-        resolve({ code: -1, stdout: '', stderr: String(err) });
-      }
-    });
   const sharedHost = new SharedPluginHost({
     launch: () => {
       const p = utilityProcess.fork(join(__dirname, 'pluginHostWorker.js'), [], {
@@ -265,7 +277,7 @@ function start(): void {
         manifest: found.manifest,
         entry: join(pluginRoot, found.dir, found.manifest.main),
         pluginPath: join(pluginRoot, found.dir),
-        config: settings.plugins.configs[pluginId] ?? {},
+        config: publicConfig(found.manifest, settings.plugins.configs[pluginId]),
         storage: Object.entries(readPluginStore(pluginDataDir, pluginId)),
       };
     },
@@ -325,6 +337,7 @@ function start(): void {
   const refreshPlugins = (): void => {
     scan = scanPluginFolders(listFolderInputs(pluginRoot));
     pluginList = buildPluginList(scan, pluginRoot);
+    sealStoredSecrets(); // a newly added plugin may already have plain secrets in settings.json
     const known = (id: WheelItem): boolean => itemExists(scan, id);
     const repaired = repairUnknownItems(settings.wheel, known);
     if (repaired.some((id, i) => id !== settings.wheel[i])) settings = store.update({ wheel: repaired });
@@ -501,8 +514,8 @@ function start(): void {
       }
       // exec commands run a child process speaking the contract's stdio (execRun.ts), then its follow-ups.
       if (command.run.kind === 'exec') {
-        const config = settings.plugins.configs[plugin.manifest.id] ?? {};
-        const file = /[\/]/.test(command.run.file) ? join(pluginRoot, plugin.dir, command.run.file) : command.run.file;
+        const config = publicConfig(plugin.manifest, settings.plugins.configs[plugin.manifest.id]);
+        const file = resolveExecFile(join(pluginRoot, plugin.dir), command.run.file);
         let streamed = '';
         const outcome = await runExecCommand(execDeps(), {
           file,
@@ -536,7 +549,7 @@ function start(): void {
         overlays.actionBubble(a.displayId, { ...at, state: 'done', title, body: outcome.detail ?? (streamed || t.actionDone) });
         return;
       }
-      const outcome = runDeclarative(command, clip, settings.plugins.configs[plugin.manifest.id] ?? {});
+      const outcome = runDeclarative(command, clip, publicConfig(plugin.manifest, settings.plugins.configs[plugin.manifest.id]));
       const stillCurrent = actionRuns.finish(run);
       if (quitting || !stillCurrent) return;
       if (outcome.kind === 'unsupported') return fail(t.actionUnsupported);
@@ -1025,7 +1038,8 @@ function start(): void {
         const before = previous.plugins.configs[p] ?? {};
         const after = s.plugins.configs[p] ?? {};
         const changed = [...new Set([...Object.keys(before), ...Object.keys(after)])].filter((k) => before[k] !== after[k]);
-        if (changed.length) sharedHost.configChanged(p, after, changed);
+        // Changed secret keys are named (so a plugin can re-read them via ctx.secrets), their values are not sent.
+        if (changed.length) sharedHost.configChanged(p, publicConfig(manifestOf(p), after), changed);
       }
     }
     if (s.language !== previous.language) tray.setText(text());
@@ -1064,6 +1078,9 @@ function start(): void {
 
   registerSettingsIpc({
     store,
+    sealPatch: (patch) => (patch.plugins
+      ? { ...patch, plugins: { ...patch.plugins, configs: sealSecrets(patch.plugins.configs, manifestOf, secretSealer) } }
+      : patch),
     library,
     getStatus: status,
     setEnabled,

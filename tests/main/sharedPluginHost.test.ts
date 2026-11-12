@@ -63,6 +63,7 @@ function setup() {
   const procs: FakeProcess[] = [];
   const executed: Array<{ pluginId: string; method: string; args: unknown[] }> = [];
   const logs: string[] = [];
+  const signals: Array<AbortSignal | undefined> = [];
   const host = new SharedPluginHost({
     launch: () => {
       const p = new FakeProcess();
@@ -74,8 +75,9 @@ function setup() {
       manifest, entry: `/plugins/${pluginId}/dist/index.js`, pluginPath: `/plugins/${pluginId}`,
       config: { model: 'x' }, storage: [],
     }),
-    execute: async (pluginId, method, args) => {
+    execute: async (pluginId, method, args, signal) => {
       executed.push({ pluginId, method, args });
+      signals.push(signal);
       return 'done-value';
     },
     log: (pluginId, level, text) => logs.push(`${pluginId}:${level}:${text}`),
@@ -83,7 +85,7 @@ function setup() {
     schedule: clock.schedule,
     cancel: clock.cancel,
   });
-  return { host, procs, executed, logs, clock };
+  return { host, procs, executed, logs, clock, signals };
 }
 
 const req = (over: Partial<InvokeRequest> = {}): InvokeRequest => ({
@@ -169,6 +171,33 @@ describe('SharedPluginHost', () => {
     expect(procs[0].sent).toContainEqual({ t: 'reply', callId: 5, ok: true, value: 'done-value' });
     procs[0].emit({ t: 'done', id: 1, result: { ok: true } });
     await promise;
+  });
+
+  it("hands host calls the invocation's signal and aborts it when the invocation is done", async () => {
+    const { host, procs, signals } = setup();
+    const promise = host.invoke(req());
+    await new Promise((r) => setTimeout(r, 0));
+    procs[0].emit({ t: 'loaded', pluginId: 'probe', handlers: ['explain'] });
+    await new Promise((r) => setTimeout(r, 0));
+    procs[0].emit({ t: 'call', callId: 7, pluginId: 'probe', invocationId: 1, method: 'exec', args: ['tool', []] });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(signals[0]?.aborted).toBe(false); // live while the invocation runs
+    procs[0].emit({ t: 'done', id: 1, result: { ok: true } });
+    await promise;
+    expect(signals[0]?.aborted).toBe(true); // an exec it started is killed with it
+  });
+
+  it('aborts the signal when the invocation times out too', async () => {
+    const { host, procs, signals, clock } = setup();
+    const promise = host.invoke(req());
+    await new Promise((r) => setTimeout(r, 0));
+    procs[0].emit({ t: 'loaded', pluginId: 'probe', handlers: ['explain'] });
+    await new Promise((r) => setTimeout(r, 0));
+    procs[0].emit({ t: 'call', callId: 8, pluginId: 'probe', invocationId: 1, method: 'exec', args: ['tool', []] });
+    await new Promise((r) => setTimeout(r, 0));
+    clock.fire(1001);
+    await expect(promise).resolves.toEqual({ ok: false, error: 'timeout' });
+    expect(signals[0]?.aborted).toBe(true);
   });
 
   it('refuses a host call whose invocation already ended', async () => {

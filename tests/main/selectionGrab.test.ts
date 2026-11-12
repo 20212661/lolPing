@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { copySteps, encodeSteps, pasteSteps } from '../../src/shared/keySteps';
-import { grabSelection, pasteText, type ClipboardItemSnapshot, type SelectionClipboard, type SelectionDeps } from '../../src/main/selectionGrab';
+import { grabSelection, pasteText, PASTE_SETTLE_MS, type ClipboardItemSnapshot, type SelectionClipboard, type SelectionDeps } from '../../src/main/selectionGrab';
 
 const TEXT = 'text/plain';
 
@@ -78,11 +78,27 @@ describe('grabSelection', () => {
     await expect(grabSelection(d, 0x12)).resolves.toBe('late');
   });
 
-  it('returns the unchanged text after the timeout when the selection equals the clipboard', async () => {
-    const clip = fakeClipboard({ text: 'same' });
+  it('returns null, not the stale clipboard, when nothing is selected', async () => {
+    // With no selection the app ignores Ctrl+C: the old clipboard (maybe a password) must not come back.
+    const clip = fakeClipboard({ text: 'secret copied earlier' });
     const d = deps(clip, { sleepMs: 500 });
-    await expect(grabSelection(d, 0x12, { timeoutMs: 600 })).resolves.toBe('same');
-    await expect(clip.readText()).resolves.toBe('same');
+    await expect(grabSelection(d, 0x12, { timeoutMs: 600 })).resolves.toBeNull();
+    await expect(clip.readText()).resolves.toBe('secret copied earlier');
+  });
+
+  it('still returns a selection that equals the old clipboard text', async () => {
+    const clip = fakeClipboard({ text: 'same' });
+    const d = deps(clip, { afterTap: (c) => void c.writeAll([{ mimetype: TEXT, blob: new Blob(['same']) }]) });
+    await expect(grabSelection(d, 0x12)).resolves.toBe('same');
+  });
+
+  it('clears the clipboard before the copy, so the poll only sees what the copy put there', async () => {
+    const clip = fakeClipboard({ text: 'old' });
+    let textAtTap: string | null = null;
+    const d = deps(clip, { afterTap: (c) => { void c.readText().then((t) => { textAtTap = t; }); void c.writeAll([{ mimetype: TEXT, blob: new Blob(['sel']) }]); } });
+    await expect(grabSelection(d, 0x12)).resolves.toBe('sel');
+    expect(textAtTap).toBe('');
+    expect(clip.wrote[0]).toBe('clear');
   });
 
   it('returns null when the helper never acks, with the clipboard restored', async () => {
@@ -111,7 +127,7 @@ describe('pasteText', () => {
       now: () => 0,
     };
     await expect(pasteText(d, 0x12, 'NEW')).resolves.toBe(true);
-    expect(order).toEqual([`tap:${encodeSteps(pasteSteps(0x12))}`, 'sleep:120']);
+    expect(order).toEqual([`tap:${encodeSteps(pasteSteps(0x12))}`, `sleep:${PASTE_SETTLE_MS}`]);
     expect(clip.wrote).toEqual([TEXT, TEXT]); // the paste's write, then the snapshot's restore
     await expect(clip.readText()).resolves.toBe('old');
   });

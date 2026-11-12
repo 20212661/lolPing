@@ -8,7 +8,7 @@ import { hotkeyLabel, hotkeyToAccelerator, type Hotkey } from '../shared/keys';
 import { pingById, type PingId } from '../shared/pings';
 import type { Platform } from '../shared/platform';
 import type { JoinResult, RoomState } from '../shared/room';
-import { panelKeyClashes, patchClashes, rendererPatch } from '../shared/settings';
+import { panelKeyClashes, patchClashes, rendererPatch, type Settings } from '../shared/settings';
 import type { UpdateState } from '../shared/update';
 import { emoteFileFrom, type EmoteLibrary } from './emoteLibrary';
 import type { SettingsStore } from './settingsStore';
@@ -35,6 +35,8 @@ export interface SettingsIpcDeps {
     openFolder(): Promise<void>;
     importPopClip(text: string): PopClipImportReply;
   };
+  /** Last step before a patch is saved: encrypts newly typed plugin secrets (pluginSecrets.ts). */
+  sealPatch?(patch: Partial<Settings>): Partial<Settings>;
   /** Strings in the app's current language. */
   text(): Strings;
   platform: Platform;
@@ -108,7 +110,7 @@ export function registerSettingsIpc(d: SettingsIpcDeps): void {
       const error = hotkeyConflict(patch.textHotkey, d.store.get().textHotkey, d.text(), d.platform);
       if (error) return { ok: false, error, settings: d.store.get() };
     }
-    return { ok: true, settings: d.store.update(patch) };
+    return { ok: true, settings: d.store.update(d.sealPatch ? d.sealPatch(patch) : patch) };
   });
   ipcMain.handle(SETTINGS_CH.status, () => d.getStatus());
   ipcMain.handle(SETTINGS_CH.setEnabled, (_e, on: unknown) => d.setEnabled(on === true));

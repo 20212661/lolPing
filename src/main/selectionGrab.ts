@@ -30,10 +30,13 @@ export interface SelectionDeps {
 }
 
 /**
- * Simulates the copy, waits for the clipboard text to change (the app needs a moment), then restores
- * every format. Returns the selected text, or null when nothing was selected, the helper is gone, or
- * nothing arrived in time. An unchanged clipboard after the timeout still yields its text: the
- * selection may simply equal what was there before.
+ * Empties the clipboard, simulates the copy, waits for text to land (the app needs a moment), then
+ * restores every format. Returns the selected text, or null when nothing was selected, the helper is
+ * gone, or nothing arrived in time.
+ *
+ * The clipboard is cleared first so "nothing selected" is distinguishable: with no selection most apps
+ * leave the clipboard alone, and comparing against the old text would hand back the stale clipboard
+ * (a copied password, say) as if it were the selection, after waiting out the whole timeout.
  */
 export async function grabSelection(
   deps: SelectionDeps,
@@ -43,12 +46,12 @@ export async function grabSelection(
   const { timeoutMs = 800, pollMs = 40 } = opts;
   const snapshot = await deps.clipboard.readAll();
   try {
-    const before = await deps.clipboard.readText();
+    deps.clipboard.clear();
     const tapped = await deps.tap(encodeSteps(copySteps(triggerVk)));
     if (!tapped) return null;
     const deadline = deps.now() + timeoutMs;
     let text = await deps.clipboard.readText();
-    while (text === before && deps.now() < deadline) {
+    while (text === '' && deps.now() < deadline) {
       await deps.sleep(pollMs);
       text = await deps.clipboard.readText();
     }
@@ -63,13 +66,24 @@ export async function grabSelection(
  * Pastes `text` into the foreground app: clipboard snapshot, write the text, synthesize Ctrl+V (with the
  * trigger lift), give the app a moment to take it, then restore. False when the helper never acked.
  */
-export async function pasteText(deps: SelectionDeps, triggerVk: number | null, text: string): Promise<boolean> {
+/**
+ * How long the pasted text stays on the clipboard after Ctrl+V. Office and Electron-based apps can read
+ * it well after 120 ms; restoring too early pastes the user's old clipboard instead.
+ */
+export const PASTE_SETTLE_MS = 400;
+
+export async function pasteText(
+  deps: SelectionDeps,
+  triggerVk: number | null,
+  text: string,
+  settleMs = PASTE_SETTLE_MS,
+): Promise<boolean> {
   const snapshot = await deps.clipboard.readAll();
   try {
     await deps.clipboard.writeAll([{ mimetype: 'text/plain', blob: new Blob([text.slice(0, 16_384)]) }]);
     const tapped = await deps.tap(encodeSteps(pasteSteps(triggerVk)));
     if (!tapped) return false;
-    await deps.sleep(120); // the app reads the clipboard while handling the synthesized Ctrl+V
+    await deps.sleep(settleMs); // the app reads the clipboard while handling the synthesized Ctrl+V
     return true;
   } finally {
     if (snapshot.length > 0) await deps.clipboard.writeAll(snapshot);

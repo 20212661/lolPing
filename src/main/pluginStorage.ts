@@ -1,10 +1,11 @@
 /**
- * A scanned plugin's persistent key-value store: one JSON file per plugin under plugins/data. Values
+ * A scanned plugin's persistent key-value store: one JSON file per plugin under plugin-data (beside the
+ * plugins folder, not inside it, so the folder scan never mistakes it for a broken plugin). Values
  * are JSON-serializable and bounded; writes are atomic (temp file + rename) so a crash mid-write
  * never leaves a torn file behind.
  */
 
-import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 const MAX_KEYS = 256;
@@ -33,4 +34,22 @@ export function writePluginStore(dataDir: string, pluginId: string, store: Recor
   const tmp = `${file}.tmp`;
   writeFileSync(tmp, JSON.stringify(bounded), 'utf8');
   renameSync(tmp, file);
+}
+
+/** Where plugin stores live: beside the plugins folder, never inside the folder the scan walks. */
+export const pluginDataDirIn = (settingsDir: string): string => join(settingsDir, 'plugin-data');
+
+/**
+ * Moves stores an earlier build wrote under plugins/data to their new home. Only when the old folder
+ * exists and the new one does not, so it runs once and never overwrites; a failure leaves both alone.
+ */
+export function moveLegacyPluginData(pluginRoot: string, dataDir: string): boolean {
+  const legacy = join(pluginRoot, 'data');
+  if (!existsSync(legacy) || existsSync(dataDir) || existsSync(join(legacy, 'plugin.json'))) return false;
+  try {
+    renameSync(legacy, dataDir);
+    return true;
+  } catch {
+    return false;
+  }
 }

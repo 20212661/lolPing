@@ -5,7 +5,18 @@
  * a done event is a pluginLoad failure. The child handle is injected, so tests script both modes.
  */
 
+import { spawn, type ChildProcess } from 'node:child_process';
+import { join } from 'node:path';
 import { PROTOCOL_VERSION } from '../../packages/plugin-api/src/protocol';
+
+/**
+ * Where an exec command's file lives: a bare name ("python") runs from PATH; anything with a separator,
+ * forward or back ("bin/tool", "bin\\tool.exe"), is relative to the plugin folder. The manifest
+ * validator has already refused absolute paths and "..".
+ */
+export function resolveExecFile(pluginDir: string, file: string): string {
+  return /[\\/]/.test(file) ? join(pluginDir, file) : file;
+}
 
 /** A follow-up the host executes after a done, each under the manifest's permissions. */
 export type ThenAction = { kind: 'paste' | 'copy'; text: string } | { kind: 'open'; target: string };
@@ -148,5 +159,69 @@ export function runExecCommand(
       child.write(req.text);
       child.end();
     }
+  });
+}
+
+/** The longest a host.exec child may run, whatever the invocation's own timeout. */
+export const HOST_EXEC_MAX_MS = 120_000;
+
+export interface HostExecOptions {
+  stdin?: string;
+  cwd?: string;
+  /** Aborted when the invocation that asked for the process ends; the process is killed with it. */
+  signal?: AbortSignal;
+  maxMs?: number;
+}
+
+/**
+ * host.exec(): runs a program for a plugin and collects its output, bounded in size and time. The child
+ * is killed when the plugin's invocation ends (signal), and in any case after maxMs, so a plugin host
+ * that is recycled or timed out never leaves its children running.
+ */
+export function runHostExec(
+  file: string,
+  args: string[],
+  opts: HostExecOptions = {},
+): Promise<{ code: number; stdout: string; stderr: string }> {
+  return new Promise((resolve) => {
+    if (!file) {
+      resolve({ code: -1, stdout: '', stderr: 'no file' });
+      return;
+    }
+    if (opts.signal?.aborted) {
+      resolve({ code: -1, stdout: '', stderr: 'the invocation has ended' });
+      return;
+    }
+    let child: ChildProcess;
+    try {
+      child = spawn(file, args, { windowsHide: true, ...(opts.cwd ? { cwd: opts.cwd } : {}) });
+    } catch (err) {
+      resolve({ code: -1, stdout: '', stderr: String(err) });
+      return;
+    }
+    let stdout = '';
+    let stderr = '';
+    let settled = false;
+    const finish = (code: number, note = ''): void => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      opts.signal?.removeEventListener('abort', onAbort);
+      resolve({ code, stdout, stderr: stderr + note });
+    };
+    const kill = (note: string): void => {
+      try { child.kill(); } catch { /* already gone */ }
+      finish(-1, note);
+    };
+    const onAbort = (): void => kill('killed: the invocation ended');
+    const timer = setTimeout(() => kill(`killed: ran longer than ${opts.maxMs ?? HOST_EXEC_MAX_MS} ms`), opts.maxMs ?? HOST_EXEC_MAX_MS);
+    opts.signal?.addEventListener('abort', onAbort, { once: true });
+    child.stdout?.on('data', (d: Buffer) => { if (stdout.length < 100_000) stdout += d.toString().slice(0, 100_000 - stdout.length); });
+    child.stderr?.on('data', (d: Buffer) => { if (stderr.length < 20_000) stderr += d.toString().slice(0, 20_000 - stderr.length); });
+    child.on('error', (err) => finish(-1, String(err)));
+    child.on('close', (code) => finish(code ?? -1));
+    child.stdin?.on('error', () => undefined); // a child that exits without reading stdin
+    if (opts.stdin !== undefined) child.stdin?.write(opts.stdin.slice(0, 1_000_000));
+    child.stdin?.end();
   });
 }

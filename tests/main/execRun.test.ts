@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { parseExecLine, runExecCommand, type ExecChild, type ExecDeps } from '../../src/main/execRun';
+import { parseExecLine, resolveExecFile, runHostExec, runExecCommand, type ExecChild, type ExecDeps } from '../../src/main/execRun';
+import { join } from 'node:path';
+import { realpathSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 
 describe('parseExecLine', () => {
   it('accepts set, append and done with and without follow-ups', () => {
@@ -122,5 +125,51 @@ describe('runExecCommand', () => {
   it('maps a failed done result straight through', async () => {
     const { deps } = fakeDeps(['{"t":"done","result":{"ok":false,"error":"noText"}}']);
     await expect(runExecCommand(deps, req(), () => undefined)).resolves.toEqual({ ok: false, error: 'noText' });
+  });
+});
+describe('resolveExecFile', () => {
+  const dir = join('plugins', 'demo');
+  it('runs a bare name from PATH', () => {
+    expect(resolveExecFile(dir, 'python')).toBe('python');
+  });
+  it('resolves forward-slash paths inside the plugin folder', () => {
+    expect(resolveExecFile(dir, 'bin/tool')).toBe(join(dir, 'bin/tool'));
+  });
+  it('resolves Windows backslash paths inside the plugin folder too', () => {
+    expect(resolveExecFile(dir, 'bin\\tool.exe').startsWith(dir)).toBe(true);
+  });
+});
+
+describe('runHostExec', () => {
+  const node = process.execPath;
+  it('passes stdin and cwd and collects stdout', async () => {
+    const r = await runHostExec(node, ['-e', 'process.stdin.on("data", d => process.stdout.write(String(d).toUpperCase() + "@" + process.cwd()))'], {
+      stdin: 'hi', cwd: tmpdir(),
+    });
+    expect(r.code).toBe(0);
+    expect(r.stdout).toBe(`HI@${realpathSync(tmpdir())}`);
+  });
+
+  it('kills the child when the invocation signal aborts', async () => {
+    const ac = new AbortController();
+    const started = Date.now();
+    const pending = runHostExec(node, ['-e', 'setTimeout(() => {}, 60000)'], { signal: ac.signal });
+    setTimeout(() => ac.abort(), 100);
+    const r = await pending;
+    expect(r.code).toBe(-1);
+    expect(r.stderr).toMatch(/invocation ended/);
+    expect(Date.now() - started).toBeLessThan(5000);
+  });
+
+  it('kills a child that outlives the hard cap', async () => {
+    const r = await runHostExec(node, ['-e', 'setTimeout(() => {}, 60000)'], { maxMs: 150 });
+    expect(r.code).toBe(-1);
+    expect(r.stderr).toMatch(/longer than 150 ms/);
+  });
+
+  it('does not start anything for an invocation that already ended', async () => {
+    const ac = new AbortController();
+    ac.abort();
+    await expect(runHostExec(node, ['-e', ''], { signal: ac.signal })).resolves.toMatchObject({ code: -1 });
   });
 });

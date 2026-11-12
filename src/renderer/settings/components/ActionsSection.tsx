@@ -35,8 +35,16 @@ function ActionInput(props: { value: string; width?: number; password?: boolean;
 }
 
 /** One configuration entry of a scanned plugin, as the control its type calls for. */
-function ConfigField(props: { prop: PluginListResult['plugins'][number]['configuration'][number]; value: unknown; onSave(v: string | number | boolean): void }) {
+function ConfigField(props: { prop: PluginListResult['plugins'][number]['configuration'][number]; value: unknown; savedSecretHint: string; onSave(v: string | number | boolean): void }) {
   const { prop, value } = props;
+  if (prop.type === 'secret') {
+    // A stored secret is ciphertext: never put it in the box (a stray keystroke would corrupt it).
+    const stored = typeof value === 'string' && value !== '';
+    return (
+      <label>{prop.title}<ActionInput value="" password placeholder={stored ? props.savedSecretHint : undefined}
+        onSave={(v) => { if (v) props.onSave(v); }} /></label>
+    );
+  }
   const asText = String(value ?? prop.default ?? '');
   if (prop.type === 'boolean') {
     return <Switch label={prop.title} checked={value === true} onChange={(_, d) => props.onSave(d.checked)} />;
@@ -68,7 +76,7 @@ function ConfigField(props: { prop: PluginListResult['plugins'][number]['configu
       </label>
     );
   }
-  return <label>{prop.title}<ActionInput value={asText} password={prop.type === 'secret'} onSave={props.onSave} /></label>;
+  return <label>{prop.title}<ActionInput value={asText} onSave={props.onSave} /></label>;
 }
 
 export function ActionsSection(
@@ -216,6 +224,7 @@ export function ActionsSection(
                   key={prop.key}
                   prop={prop}
                   value={(s.plugins.configs[p.id] ?? {})[prop.key]}
+                  savedSecretHint={t.pluginSecretSaved}
                   onSave={(v) => setPluginValue(p.id, prop.key, v)}
                 />
               ))}
